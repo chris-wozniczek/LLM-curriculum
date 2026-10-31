@@ -43,7 +43,7 @@ What the measurement shows:
 
 - **Usage is very uneven.** At layer 7, on 2,048 Wikipedia tokens (8 picks each, so 256 picks per expert on average), the busiest expert was picked {Math.max(...R.use.prose.counts[7])} times and the quietest {Math.min(...R.use.prose.counts[7])} times.
 - **Text and code use different experts.** The top 8 experts for prose and for code share 2 at layer 0, 1 at layer 7 and none at layer 15. Specialization exists, but it's along statistical lines (token types, syntax), not neat human topics like "the biology expert".
-- **The router gets more decisive in deeper layers.** The 8 chosen experts hold {(R.use.prose.topk_mass[0] * 100).toFixed(0)}% of the router's probability at layer 0 and {(R.use.prose.topk_mass[15] * 100).toFixed(0)}% at layer 15 (OLMoE renormalizes nothing here; the weights used are the raw softmax values).
+- **The router gets more decisive in deeper layers.** The 8 chosen experts hold {(R.use.prose.topk_mass[0] * 100).toFixed(0)}% of the router's probability at layer 0 and {(R.use.prose.topk_mass[15] * 100).toFixed(0)}% at layer 15 (OLMoE's config sets `norm_topk_prob: false`, so these raw softmax weights are used as-is).
 
 ## Load balancing
 
