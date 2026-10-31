@@ -1,0 +1,96 @@
+---
+models: ["Qwen3-0.6B (BF16)", "DeepSeek-V3 (FP8)", "gpt-oss-20b (MXFP4)"]
+---
+import T from "../components/T.astro";
+import FigBits from "../components/figs/FigBits.astro";
+import FigSize from "../components/figs/FigSize.astro";
+
+## The short version
+
+Every weight in a model is a number, and a number has to be stored in some number of bits. Fewer bits means a smaller file and faster loading from memory, but fewer different values you can represent. Everything in this module is a different answer to one question: **how do we spend the bits?**
+
+<div class="callout plain"><b>Plain language</b><p>Think of a ruler. A 16-bit format is a ruler with 65,536 marks. A 4-bit format is a ruler with only 16 marks. Every real weight gets snapped to the nearest mark. Number formats decide where the marks go: evenly spaced (integers) or crowded near zero and sparse far away (floats).</p></div>
+
+## How a float is stored
+
+A floating-point number has three parts, like scientific notation (`-1.25 × 2³`):
+
+- **sign** (1 bit): plus or minus.
+- **<T k="exponent">exponent</T>**: which power of two, so how *big* the number is. More exponent bits = wider range.
+- **<T k="mantissa">mantissa</T>**: the digits after the point, so how *precise* it is. More mantissa bits = finer steps.
+
+Try it. Type a typical weight such as `0.0236` (the standard deviation of the weights in Qwen3-0.6B's layer-10 MLP, measured) and switch formats. Watch how the rounding error grows as mantissa bits disappear, and what happens to `70000` in FP16.
+
+<FigBits />
+
+## The 16-bit formats: FP16 vs BF16
+
+| | sign | exponent | mantissa | largest value | used for |
+|---|---|---|---|---|---|
+| FP32 | 1 | 8 | 23 | ~3.4 × 10³⁸ | optimizer states, master weights |
+| FP16 | 1 | 5 | 10 | 65,504 | older GPU training, some inference |
+| BF16 | 1 | 8 | 7 | ~3.4 × 10³⁸ | almost every open-weight release today |
+
+**<T k="fp16">FP16</T>** has more precision but a small range. Activations in large models regularly exceed 65,504, which becomes infinity and breaks training unless you use loss scaling ([Micikevicius et al., 2017](https://arxiv.org/abs/1710.03740)).
+
+**<T k="bf16">BF16</T>** keeps FP32's 8 exponent bits and drops mantissa bits instead. It's just the top half of an FP32 number, so converting is trivial and nothing overflows. Neural networks tolerate the lost precision well. Qwen3-0.6B's `config.json` says `"torch_dtype": "bfloat16"`, and every tensor in its safetensors header is `BF16` (module 05).
+
+## FP8: E4M3 and E5M2
+
+FP8 comes in two variants ([Micikevicius et al., 2022](https://arxiv.org/abs/2209.05433), now the OCP 8-bit float spec):
+
+- **E4M3**: 4 exponent, 3 mantissa bits, largest value 448, no infinity. Used for weights and activations.
+- **E5M2**: 5 exponent, 2 mantissa bits, largest value 57,344. Used for gradients, which need range more than precision.
+
+448 is small, so FP8 always comes with a **<T k="scale">scale</T>**: divide the tensor by a number so its biggest value lands near 448, store the FP8 values plus the scale. **DeepSeek-V3 ships its weights this way**: its `config.json` has
+
+```json
+"quantization_config": { "activation_scheme": "dynamic", "fmt": "e4m3", "quant_method": "fp8", "weight_block_size": [128, 128] }
+```
+
+meaning one scale per 128 × 128 tile of every weight matrix. That's why the DeepSeek-V3 repo is about 689 GB for 671B parameters instead of ~1.3 TB. DeepSeek also *trained* most of the model in FP8 ([DeepSeek-V3 report, §3.3](https://arxiv.org/abs/2412.19437)).
+
+## 4-bit floats: E2M1, MXFP4 and NVFP4
+
+A 4-bit float (<T k="e2m1">E2M1</T>: 1 sign, 2 exponent, 1 mantissa bit) can hold only these magnitudes: **0, 0.5, 1, 1.5, 2, 3, 4, 6**. Switch the explorer above to FP4 E2M1 and type anything: it lands on one of those eight. That's far too few values on their own, so 4-bit floats always live in small **blocks that share a scale**:
+
+| | values | block size | scale per block | extra | bits per weight |
+|---|---|---|---|---|---|
+| **<T k="mxfp4">MXFP4</T>** (OCP Microscaling) | E2M1 | 32 | 8-bit power of two (E8M0) | none | 4 + 8/32 = **4.25** |
+| **<T k="nvfp4">NVFP4</T>** (NVIDIA) | E2M1 | 16 | FP8 E4M3 | one FP32 scale per tensor | 4 + 8/16 = **4.5** |
+
+Sources: [OCP MX spec v1.0](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf), [Rouhani et al., 2023](https://arxiv.org/abs/2310.10537), [NVIDIA: Introducing NVFP4](https://developer.nvidia.com/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/).
+
+NVFP4 spends a bit more: smaller blocks and a finer-grained scale (an FP8 number instead of a pure power of two), so each block's scale fits its values more tightly. In our own test on Qwen3-0.6B (module 07), NVFP4 kept the original's top token more often than MXFP4 did.
+
+**Hardware matters here.** NVIDIA Blackwell GPUs (B200, RTX 50xx, DGX Spark) compute FP4 natively. On Apple Silicon or older GPUs, FP4 weights are unpacked to 16-bit before the math, so you save memory but don't get the FP4 compute speed-up.
+
+**gpt-oss ships in MXFP4.** gpt-oss-20b's config contains `"quant_method": "mxfp4"` with a `modules_to_not_convert` list that keeps the attention layers, the MoE router, the embeddings and `lm_head` in BF16. Only the huge expert weights are FP4. That's **mixed precision** in a released model.
+
+## Integers: INT8 and INT4
+
+Integer formats space their marks evenly. INT8 has 256 values (-128…127), INT4 has 16 (-8…7). An integer weight is always `integer × scale` (sometimes `+ zero point`), with one scale per row, per group of 32-128 weights, or per block. Integers are what GPTQ, AWQ, GGUF k-quants and MLX use. Module 07 shows the trade-offs with real weights.
+
+## Two meanings of "mixed precision"
+
+<T k="mixed-precision">Mixed precision</T> means two different things depending on context:
+
+1. **In training:** do the heavy matrix maths in BF16/FP16 (or FP8), keep an FP32 copy of the weights and optimizer state for the updates, because tiny updates vanish when added in 16-bit. That's the standard recipe since [Micikevicius et al., 2017](https://arxiv.org/abs/1710.03740).
+2. **In quantization:** give different tensors different formats. Typically embeddings, `lm_head`, attention and routers get more bits, and the bulk MLP/expert weights get fewer. gpt-oss (above), GGUF's `Q4_K_M` and EXL3 packs like ViC305's SAGE all do this.
+
+## Bits per weight → file size
+
+<T k="bpw">Bits per weight</T> is the one number that tells you the size: **size in bytes ≈ parameters × bpw ÷ 8**. The scales count too, which is why 4-bit with a 16-bit scale every 32 weights is 4.5 bpw, not 4.
+
+Check ViC305's post: 816B × 1.13 ÷ 8 ≈ 115 GB. The repo's index says 120.1 GB, the difference being the few tensors kept at higher precision plus metadata.
+
+<FigSize />
+
+<details class="deeper">
+<summary>Go deeper: why floats crowd near zero</summary>
+<div>
+
+With M mantissa bits, every power-of-two interval [2ᵉ, 2ᵉ⁺¹) is cut into 2ᴹ equal steps. So between 1 and 2, BF16 has 128 steps of 1/128. Between 1024 and 2048 it also has 128 steps, now each 8 wide. The relative error stays roughly constant (about 2⁻⁽ᴹ⁺¹⁾, so ~0.4% for BF16, ~6% for E4M3), which suits neural network weights: most are tiny, a few are large, and they all need similar *relative* precision. Integers have constant *absolute* steps, which is why they need well-chosen scales.
+
+</div>
+</details>

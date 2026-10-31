@@ -1,0 +1,119 @@
+---
+models: ["Qwen/Qwen3-0.6B (measured)", "gpt-oss-20b", "DeepSeek-V3", "Muse Spark EXL3 1.13bpw"]
+---
+import T from "../components/T.astro";
+import FigQuant from "../components/figs/FigQuant.astro";
+import FigFidelity from "../components/figs/FigFidelity.astro";
+
+## What quantization is
+
+<T k="quantization">Quantization</T> stores each weight with fewer bits by snapping it to one of a small set of allowed values. A BF16 weight can take 65,536 different values. A 4-bit weight can take 16. The trick is choosing *which* 16 so that the model barely notices.
+
+<div class="callout plain"><b>Plain language</b><p>Imagine describing a photo with only 16 colours. If one palette has to serve the whole photo, the sky and the skin tones both get ruined. If every small patch gets its own 16-colour palette, the photo looks almost the same. Quantization is choosing good palettes (scales) for small patches (groups) of weights.</p></div>
+
+## The simplest method: round to nearest
+
+<T k="rtn">Round-to-nearest</T> (RTN), for symmetric 4-bit integers:
+
+1. Take a group of weights, e.g. 32 of them.
+2. Find the largest absolute value, say 0.08. Set the <T k="scale">scale</T> = 0.08 / 7 (7 is the largest 4-bit integer we use).
+3. Divide every weight by the scale and round: 0.031 / 0.0114 = 2.7 → **3**.
+4. Store the integers (4 bits each) and the scale (16 bits per group).
+5. When running the model: 3 × 0.0114 = 0.0343. The weight came back as 0.0343 instead of 0.031. That difference is the quantization error.
+
+Below are 64 real weights from Qwen3-0.6B. Change the bits and the <T k="group-size">group size</T> and watch the error. Then inject an <T k="outlier">outlier</T>: one big weight makes its group's scale huge, and the small weights in that group get rounded to zero.
+
+<FigQuant />
+
+What to take away from the figure:
+
+- **Bits** set how many marks the ruler has. 8-bit is nearly invisible, 2-bit is brutal.
+- **Smaller groups** = better fit, but every group stores its own scale, so bpw goes up (4-bit with groups of 32 = 4.5 bpw).
+- **A <T k="zero-point">zero point</T>** helps when a group's values are lopsided (all slightly positive, say), at the cost of another 16 bits per group.
+- **Outliers** are the enemy. Large language models are known to have a few huge values in specific channels ([LLM.int8(), Dettmers et al., 2022](https://arxiv.org/abs/2208.07339)), and most clever quantizers exist to deal with them.
+
+## How to measure a quant: top-1, top-5, KL divergence
+
+To judge a quant you compare it with the original on the same text. At every position, both models output a probability for each of the 151,936 possible next tokens.
+
+<div class="callout plain"><b>Illustration</b><p>After <code>The capital of France is</code>, the original might give <em>" Paris" 41%, " a" 12%, " the" 9%…</em> and the quant <em>" Paris" 38%, " a" 14%, " the" 9%…</em>. Both pick " Paris" first, so that position counts as a top-1 match. The figure below shows the real numbers for this exact prompt.</p></div>
+
+- **<T k="top1">Top-1 agreement</T>**: at what share of positions does the quant's most likely token equal the original's? Computed by running both models on the same thousands of tokens and counting matches.
+- **<T k="top5">Top-5 agreement</T>**: at what share is the quant's top token within the original's top 5? Some authors define top-5 differently, so check theirs. llama.cpp reports top-1 agreement as "Same top p".
+- **<T k="kld">KL divergence</T>** looks at the *whole* distribution, not only the winner. For one position: KLD = Σ P(token) × log(P(token) / Q(token)), summed over all tokens, where P is the original and Q the quant. 0 means identical. It's averaged over all positions.
+- **<T k="perplexity">Perplexity</T>** is the classic: how surprised each model is by the real next token. It can hide damage, because errors in both directions partly cancel out. KLD can't hide it.
+
+In code (from `labs/quant_fidelity.py`), given log-probabilities `ref` and `q` of shape [tokens, vocab]:
+
+```python
+kld  = (ref.exp() * (ref - q)).sum(-1)                         # one value per position
+top1 = (q.argmax(-1) == ref.argmax(-1)).float().mean()
+top5 = (ref.topk(5, -1).indices == q.argmax(-1)[:, None]).any(-1).float().mean()
+```
+
+### Why mean vs median matters
+
+ViC305's post reports mean KLD 0.05501 and **median** 0.00010. The median says: at half of all positions, the quant is basically identical to the original. The mean is 550× larger, so a small share of positions must differ a lot. Those rare big misses are what derail a long agent session, which is why he says these are token-level fidelity numbers and not task pass rates. The histogram in the next figure shows the same shape in our own measurements: a big hill of near-zero KLD and a long tail.
+
+## Measured: Qwen3-0.6B, 12 ways
+
+We ran this ourselves. `labs/quant_fidelity.py` rounds every attention and MLP weight of Qwen3-0.6B to a format, runs the original and the rounded copy on the same 8,192 tokens of WikiText-2, and computes everything above.
+
+<FigFidelity />
+
+<div class="callout measured"><b>What the numbers say</b>
+<p><strong>8-bit is close to free.</strong> INT8 with one scale per row: 96.5% top-1, mean KLD 0.004, perplexity 33.42 vs 33.18. FP8 (per-tensor or DeepSeek-style 128×128 blocks) is a little behind at about 94% top-1, because E4M3 has only 3 mantissa bits.</p>
+<p><strong>Group size matters enormously at 4 bits.</strong> INT4 with one scale per row: 51% top-1, perplexity 70. Same bits with groups of 128: 65.5%. Groups of 32 with a zero point: 77%.</p>
+<p><strong>NVFP4 beat MXFP4</strong> (77.3% vs 73.8% top-1), as expected from its smaller blocks and finer scales.</p>
+<p><strong>3 bits with plain rounding breaks this model</strong>: 15% top-1, perplexity 795. Keeping attention at 8 bits while the MLP stays at 3 bits only helps a bit (38%): the MLP holds most of the weights and does most of the damage.</p>
+<p><strong>Quantizing the embedding table too</strong> made INT4 g128 worse (65.5% → 64.7% top-1), which is why quantizers usually leave embeddings and lm_head alone.</p></div>
+
+**Why are these so much worse than ViC305's 96.5% at 1.13 bpw?** Three reasons. (1) This is plain RTN with no calibration data; GPTQ, AWQ, imatrix and EXL3 exist precisely to do better at the same bits. (2) Small models are much more fragile than large ones; a 0.6B model has no redundancy to spare, and Qwen3 in particular has been found sensitive to low-bit quantization ([Zheng et al., 2025](https://arxiv.org/abs/2505.02214)). (3) Our text and his held-out sequences are different. So read our table for the *ranking* and the *shape* of the trade-offs, not as numbers to expect on a 30B model.
+
+## Smarter quantizers
+
+All of these keep the same idea (integers or codes plus scales) but choose the values more cleverly, using <T k="calibration">calibration data</T>: a few hundred sample texts run through the model to see which weights matter.
+
+- **<T k="gptq">GPTQ</T>** ([Frantar et al., 2022](https://arxiv.org/abs/2210.17323)): quantizes one column at a time and nudges the remaining unquantized weights to cancel the error just made, using statistics of the layer's inputs. Still the base of many 4-bit repos.
+- **<T k="awq">AWQ</T>** ([Lin et al., 2023](https://arxiv.org/abs/2306.00978)): notices that about 1% of weight channels meet large activations and matter most, and scales those channels up before rounding so they keep more precision.
+- **<T k="imatrix">imatrix</T>** ([llama.cpp](https://github.com/ggml-org/llama.cpp/tree/master/tools/imatrix)): records how strongly each weight column is used on calibration text, then weights the rounding error accordingly. Recommended for anything below ~4 bits in GGUF.
+
+### GGUF k-quants and i-quants
+
+<T k="k-quant">k-quants</T> ([PR #1684](https://github.com/ggml-org/llama.cpp/pull/1684)) group weights into super-blocks of 256, split into sub-blocks that each get their own scale, and the scales themselves are quantized. The suffix is a mixing policy: in `Q4_K_M`, most tensors are `Q4_K` but some sensitive ones (parts of `attn_v` and `ffn_down`) get `Q6_K`. `_S` uses fewer upgrades, `_L` more. That's mixed precision, decided per tensor by a fixed rule. **i-quants** (`IQ2_XXS`, `IQ3_S`, …) go further below 4 bits by encoding groups of weights as entries of a lattice codebook rather than independent integers.
+
+### MLX
+
+[MLX](https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.quantize.html) uses affine group quantization: each group (64 weights by default) gets a scale and a bias, so 4-bit MLX is 4 + 32/64 = 4.5 bpw. No calibration by default. This is what you run in oMLX.
+
+### EXL2 vs EXL3
+
+- **EXL2** ([ExLlamaV2](https://github.com/turboderp-org/exllamav2)) is GPTQ-style quantization where each layer can get a different bitrate. The converter measures how much error each layer causes at each bitrate, then picks a mix that hits your target average (say 4.65 bpw) with the least total error. Mixed precision chosen by measurement, not by rule.
+- **<T k="exl3">EXL3</T>** ([ExLlamaV3](https://github.com/turboderp-org/exllamav3)) is a different method, described by its author as a streamlined variant of [QTIP](https://arxiv.org/abs/2406.11235). Two ideas: (1) multiply weights by random ±1 signs and a Hadamard transform first ("incoherence processing", from [QuIP#](https://arxiv.org/abs/2402.04396)), which spreads outliers evenly so no group is ruined by one big value; (2) encode the weights with a **trellis code**, where each weight's value depends on a running state, so the average bits per weight can be fractional, like 2.25 or 1.13. That's why the tensors in an EXL3 repo are called `trellis` (the codes), `suh` / `svh` (the sign vectors applied on each side of the Hadamard transforms) and `mul1` (a scale).
+
+**ViC305's SAGE** is his own mixed-precision method on top of EXL3: the repo README says it chooses different bitrates for different tensors and that the method isn't published. From the outside we can verify the file size and the reported fidelity numbers, not how the bitrates were chosen.
+
+## Mixed precision: what to keep high
+
+Not every tensor deserves the same bits. Common rules, visible in real repos:
+
+- **Embeddings and `lm_head`**: often kept at 6-8 bits or BF16 (gpt-oss keeps both in BF16, and our measurement above shows the damage of quantizing embeddings).
+- **MoE router**: tiny, but every routing mistake sends a token to the wrong expert. gpt-oss keeps it in BF16.
+- **Attention**: a small share of the weights in MoE models, so cheap to keep at higher bits.
+- **Expert / MLP weights**: the vast majority of the bytes, so squeeze these hardest. In a 816B MoE almost all of the size is experts, which is how 1.13 bpw average is possible at all.
+- **First and last layers** are often more sensitive than the middle ones.
+
+## Reproduce it
+
+```bash
+python labs/quant_fidelity.py --model Qwen/Qwen3-0.6B --text wikitext2-test.parquet --seqs 16 --len 512
+```
+
+About 10 minutes on CPU, less on Apple Silicon. To measure a real GGUF quant instead, llama.cpp has this built in ([docs](https://github.com/ggml-org/llama.cpp/tree/master/tools/perplexity)):
+
+```bash
+llama-perplexity -m model-bf16.gguf -f wiki.test.raw --kl-divergence-base base.kld
+llama-perplexity -m model-Q4_K_M.gguf --kl-divergence-base base.kld --kl-divergence
+```
+
+The second command prints mean/median KLD and "same top p" (top-1 agreement) for the quant.

@@ -1,0 +1,127 @@
+---
+models: ["llm-compressor", "llama.cpp", "MLX", "ExLlamaV3", "mergekit", "vLLM"]
+---
+import T from "../components/T.astro";
+
+## What a recipe is
+
+A <T k="recipe">recipe</T> is the exact list of settings someone used to make or run a model, written down so anyone can repeat it. On Hugging Face you'll meet four kinds. Each section shows a real format and what every line does.
+
+<div class="callout plain"><b>Plain language</b><p>A model card says "here is a 4-bit model". A recipe says "here is how I made it: this method, these bits, these layers left alone, this calibration text". Without the recipe you can use the model but not reproduce or improve it.</p></div>
+
+## 1. Quantization recipes
+
+### llm-compressor (for vLLM)
+
+[llm-compressor](https://github.com/vllm-project/llm-compressor) describes a quant as a list of "modifiers". A typical 4-bit GPTQ recipe:
+
+```python
+from llmcompressor.modifiers.quantization import GPTQModifier
+from llmcompressor import oneshot
+
+recipe = GPTQModifier(targets="Linear", scheme="W4A16", ignore=["lm_head"])
+oneshot(model="Qwen/Qwen3-0.6B", dataset="open_platypus", recipe=recipe,
+        max_seq_length=2048, num_calibration_samples=512, output_dir="Qwen3-0.6B-W4A16")
+```
+
+- `GPTQModifier`: the method (module 07). Swap in `QuantizationModifier` for plain RTN/FP8, or an AWQ modifier.
+- `targets="Linear"`: quantize every linear (matrix) layer.
+- `scheme="W4A16"`: **W**eights in 4 bits, **A**ctivations stay 16-bit. `FP8` or `NVFP4` schemes quantize activations too.
+- `ignore=["lm_head"]`: mixed precision, keep the output layer in full precision. MoE recipes typically add the router (`"re:.*mlp.gate$"`).
+- `dataset`, `num_calibration_samples`: the <T k="calibration">calibration data</T>.
+
+The same recipe can be saved as YAML in the repo, which is what people mean by "recipe.yaml".
+
+### GGUF (llama.cpp)
+
+```bash
+llama-imatrix  -m Qwen3-0.6B-BF16.gguf -f calibration.txt -o imatrix.dat
+llama-quantize --imatrix imatrix.dat Qwen3-0.6B-BF16.gguf Qwen3-0.6B-Q4_K_M.gguf Q4_K_M
+```
+
+The "recipe" is: which calibration text, which quant type, and any per-tensor overrides (`--output-tensor-type`, `--token-embedding-type`).
+
+### MLX
+
+```bash
+mlx_lm.convert --hf-path Qwen/Qwen3-0.6B -q --q-bits 4 --q-group-size 64
+```
+
+`--q-bits` and `--q-group-size` are the whole recipe for a plain MLX quant. Mixed-bit MLX quants add per-layer rules.
+
+### EXL3
+
+ExLlamaV3's `convert.py` takes an input model, an output folder, a working folder and a target bitrate (`-b`, e.g. 4.0), plus a separate bitrate for the output head. Check the [repo README](https://github.com/turboderp-org/exllamav3) for the current flags. A mixed-precision EXL3 recipe like ViC305's adds a per-tensor bitrate plan on top.
+
+## 2. Merge recipes (mergekit)
+
+[mergekit](https://github.com/arcee-ai/mergekit) merges models from a YAML file:
+
+```yaml
+merge_method: slerp
+base_model: model-A
+slices:
+  - sources:
+      - model: model-A
+        layer_range: [0, 28]
+      - model: model-B
+        layer_range: [0, 28]
+parameters:
+  t: 0.5
+dtype: bfloat16
+```
+
+- `merge_method`: how to combine weights: `linear` (weighted average), `slerp` (interpolate along a sphere), `ties` / `dare_ties` (keep only the biggest changes each fine-tune made relative to a base, resolve sign conflicts).
+- `slices` / `layer_range`: which layers of which model. Using different ranges is how "frankenmerges" stack layers into a bigger model.
+- `t`: 0 = all model A, 1 = all model B.
+
+Module 12 covers why merges work at all.
+
+## 3. Training recipes
+
+A post-training recipe pins down the data and the optimizer. The fields you'll see in TRL / Unsloth / axolotl configs (values below are an **illustration**, not a recommendation):
+
+```yaml
+base_model: Qwen/Qwen3-0.6B
+dataset: my-sft-data.jsonl        # what it learns from
+chat_template: qwen3              # must match the base model
+adapter: lora                     # full | lora | qlora
+lora_r: 16                        # size of the LoRA matrices
+lora_alpha: 32                    # how strongly they're applied
+lora_target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+learning_rate: 2e-4
+num_epochs: 2
+sequence_len: 8192
+bf16: true
+```
+
+Module 11 explains each choice, with Otter's real recipe as the case study.
+
+## 4. Serving recipes
+
+A serving recipe is the exact command, versions and hardware. For example, with [vLLM](https://docs.vllm.ai):
+
+```bash
+vllm serve Qwen/Qwen3-30B-A3B \
+  --tensor-parallel-size 2 \
+  --max-model-len 32768 \
+  --gpu-memory-utilization 0.90 \
+  --enable-auto-tool-choice --tool-call-parser hermes
+```
+
+- `--tensor-parallel-size 2`: split every layer across 2 GPUs.
+- `--max-model-len`: the context you allow. Bigger = more <T k="kv-cache">KV cache</T> memory reserved.
+- `--gpu-memory-utilization`: share of GPU memory vLLM may take for weights + KV cache.
+- `--enable-auto-tool-choice --tool-call-parser`: how tool calls are parsed out of the model's text. The wrong parser is a classic cause of "failed tool calls" in agent harnesses.
+
+vLLM keeps per-model pages at [docs.vllm.ai/projects/recipes](https://docs.vllm.ai/projects/recipes/). When someone posts "serving recipe for two DGX Sparks", they mean a command like this, tuned for that hardware.
+
+## How to read any recipe
+
+Ask five questions:
+
+1. **Method**: RTN, GPTQ, AWQ, EXL3, merge, LoRA…?
+2. **Bits / formats per tensor**: what's kept high (embeddings, lm_head, router, attention)?
+3. **Data**: calibration set or training set, and how much?
+4. **Versions**: tool versions matter; formats change.
+5. **Evidence**: did they publish KLD/top-1, perplexity, or task results? Against what reference?

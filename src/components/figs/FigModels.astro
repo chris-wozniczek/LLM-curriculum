@@ -1,0 +1,77 @@
+---
+import Fig from "../Fig.astro";
+const files = import.meta.glob<any>("../../data/models/*.json", { eager: true });
+const order = ["Qwen/Qwen3-0.6B", "Qwen/Qwen3.5-9B", "ornith-ai/Ornith-1.5-9B", "Qwen/Qwen3-30B-A3B", "Qwen/Qwen3-Next-80B-A3B-Instruct", "openai/gpt-oss-20b", "deepseek-ai/DeepSeek-V3", "moonshotai/Kimi-K2-Instruct", "vcruz305/Muse-Spark-Open-816B-A42B-EXL3-SAGE-1.13bpw"];
+const short: Record<string, string> = { "Qwen/Qwen3-Next-80B-A3B-Instruct": "Qwen3-Next-80B-A3B", "moonshotai/Kimi-K2-Instruct": "Kimi-K2", "vcruz305/Muse-Spark-Open-816B-A42B-EXL3-SAGE-1.13bpw": "Muse Spark EXL3 1.13bpw" };
+const models = order.map((r) => Object.values(files).find((f: any) => (f.default ?? f).repo === r)).filter(Boolean).map((f: any) => {
+  const d = f.default ?? f, c = { ...d.config, ...(d.config.text_config ?? {}) };
+  const lt: string[] | undefined = c.layer_types;
+  const attn = lt ? Object.entries(lt.reduce((a: any, x) => ((a[x] = (a[x] ?? 0) + 1), a), {})).map(([k, v]) => `${v}× ${k.replace("_attention", "")}`).join(", ")
+    : c.full_attention_interval ? `1 full every ${c.full_attention_interval}` : c.kv_lora_rank ? "MLA (all layers)" : "full (all layers)";
+  const experts = c.num_experts ?? c.n_routed_experts ?? c.num_local_experts;
+  const q = c.quantization_config;
+  return {
+    repo: d.repo, name: short[d.repo] ?? d.repo.split("/")[1],
+    rows: {
+      arch: (d.config.architectures ?? [])[0] ?? "", layers: c.num_hidden_layers, hidden: c.hidden_size,
+      heads: c.num_attention_heads, kv: c.kv_lora_rank ? `latent ${c.kv_lora_rank}` : c.num_key_value_heads, headdim: c.head_dim ?? (c.qk_nope_head_dim ? `${c.qk_nope_head_dim}+${c.qk_rope_head_dim} rope` : c.hidden_size / c.num_attention_heads),
+      attn, mlp: experts ? `${experts} experts, ${c.num_experts_per_tok} per token${c.n_shared_experts ? `, ${c.n_shared_experts} shared` : c.shared_expert_intermediate_size ? ", 1 shared" : ""}` : `dense, ${c.intermediate_size} wide`,
+      ctx: c.max_position_embeddings, vocab: c.vocab_size, tied: String(!!(d.config.tie_word_embeddings ?? c.tie_word_embeddings)),
+      dtype: q ? `${q.quant_method}${q.fmt ? " " + q.fmt : ""}${q.weight_block_size ? " block " + q.weight_block_size.join("×") : ""}${q.bits ? " " + q.bits + " bpw" : ""}` : (c.torch_dtype ?? c.dtype ?? ""),
+      size: d.total_size ? `${((d.disk_size ?? d.total_size) / 1e9).toFixed(1)} GB${d.disk_size && Math.abs(d.disk_size - d.total_size) / d.disk_size > 0.05 ? ` (index says ${(d.total_size / 1e9).toFixed(0)})` : ""}` : "1.5 GB (single file)", tensors: d.tensor_count ?? 311,
+    },
+    patterns: d.tensor_patterns ?? [],
+  };
+});
+const labels: [string, string, string][] = [
+  ["arch", "class", "Which model code builds it (architectures)."],
+  ["layers", "layers", "How many times the block repeats (num_hidden_layers)."],
+  ["hidden", "width", "Numbers per token in the residual stream (hidden_size)."],
+  ["heads", "query heads", "num_attention_heads."],
+  ["kv", "KV heads", "num_key_value_heads. Fewer = smaller KV cache (GQA). MLA stores a compressed latent instead."],
+  ["headdim", "head dim", "Numbers per head."],
+  ["attn", "attention layers", "Full, sliding-window, linear (Gated DeltaNet) or MLA, from layer_types / full_attention_interval / kv_lora_rank."],
+  ["mlp", "MLP", "Dense MLP or Mixture of Experts (num_experts, num_experts_per_tok, shared experts)."],
+  ["ctx", "max context", "max_position_embeddings."],
+  ["vocab", "vocab", "vocab_size."],
+  ["tied", "tied embeddings", "tie_word_embeddings."],
+  ["dtype", "stored as", "torch_dtype, or quantization_config if the repo ships quantized."],
+  ["size", "weights on disk", "Sum of the .safetensors files (Hub API) or total_size from model.safetensors.index.json. DeepSeek-V3's index total_size is about twice its real file size, so never trust that field blindly."],
+  ["tensors", "tensors", "Entries in the weight map."],
+];
+---
+<Fig title="Nine open models, read from their own config.json" sub="click a column to see its tensor name patterns">
+  <script type="application/json" id="fm-data" set:html={JSON.stringify(models.map((m) => ({ name: m.name, repo: m.repo, patterns: m.patterns })))} />
+  <div class="scroll-x fm-box">
+    <table class="tbl fm">
+      <thead><tr><th></th>{models.map((m, i) => <th class={`click ${i === 3 ? "on" : ""}`} data-i={i}><a href={`https://huggingface.co/${m.repo}`} target="_blank" rel="noopener">{m.name}</a></th>)}</tr></thead>
+      <tbody>{labels.map(([k, l, h]) => <tr><td title={h}><span class="term-l">{l}</span></td>{models.map((m, i) => <td data-i={i}>{(m.rows as any)[k]}</td>)}</tr>)}</tbody>
+    </table>
+  </div>
+  <div class="fm-pat">
+    <div class="mono" style="font-size:12px;color:var(--ink-3);margin-bottom:8px">Tensor name patterns in <b id="fm-name" style="color:var(--ink)"></b> (<code>{"{n}"}</code> = any number, count = how many tensors match)</div>
+    <div class="scroll-x" style="max-height:280px;overflow-y:auto"><table class="tbl"><tbody id="fm-rows"></tbody></table></div>
+  </div>
+  <Fragment slot="cap">Every cell comes from the repo's <code>config.json</code> (merged with <code>text_config</code> for multimodal repos) and <code>model.safetensors.index.json</code>, downloaded from Hugging Face. Nothing here is typed by hand. Muse Spark is a community EXL3 quant, so its config and tensors describe the quantized pack.</Fragment>
+</Fig>
+<style>
+  .fm-box { border: 1px solid var(--line); border-radius: 12px; }
+  .fm td:first-child { position: sticky; left: 0; background: #10131a; color: var(--ink-3); }
+  .fm th a { text-decoration: none; color: var(--ink-2); }
+  .fm th.on a, .fm td.on { color: var(--ink); }
+  .fm td.on, .fm th.on { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .fm th.click { cursor: pointer; }
+  .term-l { border-bottom: 1px dotted var(--ink-4); cursor: help; }
+  .fm-pat { margin-top: 16px; }
+</style>
+<script>
+  const M = JSON.parse(document.getElementById("fm-data")!.textContent!);
+  const show = (i: number) => {
+    document.querySelectorAll<HTMLElement>(".fm [data-i]").forEach((c) => c.classList.toggle("on", +c.dataset.i! === i));
+    document.getElementById("fm-name")!.textContent = M[i].name;
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    document.getElementById("fm-rows")!.innerHTML = M[i].patterns.length ? M[i].patterns.map(([p, n]: [string, number]) => `<tr><td>${esc(p)}</td><td class="r">${n.toLocaleString("en-US")}</td></tr>`).join("") : `<tr><td>Single-file repo: see the full tensor list above.</td></tr>`;
+  };
+  document.querySelectorAll<HTMLElement>(".fm th.click").forEach((th) => th.addEventListener("click", (e) => { if ((e.target as HTMLElement).tagName !== "A") show(+th.dataset.i!); }));
+  show(3);
+</script>

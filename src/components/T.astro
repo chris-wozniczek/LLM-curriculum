@@ -1,0 +1,7 @@
+---
+import { terms } from "../data/glossary";
+interface Props { k: string }
+const { k } = Astro.props;
+if (!terms[k]) throw new Error(`Unknown glossary term: ${k}`);
+---
+<a class="term" href={`/glossary#${k}`} data-k={k}><slot /></a>
