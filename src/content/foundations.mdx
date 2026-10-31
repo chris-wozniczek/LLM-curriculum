@@ -1,0 +1,87 @@
+---
+models: ["Qwen/Qwen3-0.6B (real tensor shapes)", "live gradient descent"]
+---
+import T from "../components/T.astro";
+import FigGrad from "../components/figs/FigGrad.astro";
+
+## A model is a big pile of numbers
+
+Everything in an LLM is numbers: the text going in (token ids), the knowledge inside (the <T k="parameter">parameters</T>), and what comes out (one probability per possible next token). There are only four shapes of number you need to know:
+
+| name | shape | example from Qwen3-0.6B |
+|---|---|---|
+| scalar | one number | `rms_norm_eps = 1e-06` in `config.json` |
+| vector | a list, shape [n] | one token's hidden state: 1024 numbers |
+| matrix | a table, shape [rows, cols] | `layers.0.mlp.up_proj.weight`: [3072, 1024] |
+| <T k="tensor">tensor</T> | any number of dimensions | a batch of hidden states: [batch, tokens, 1024] |
+
+"Tensor" is just the general word. A model file is a dictionary from names to tensors (module 05 opens one).
+
+<div class="callout plain"><b>Plain language</b><p>A vector is one row of a spreadsheet: a token "described" by 1024 numbers. A matrix is the whole sheet. A model is a few hundred named sheets, and running it means multiplying your rows through those sheets one after another.</p></div>
+
+## The one operation: matrix multiply
+
+Almost all the compute in an LLM is matrix multiplication. A weight matrix of shape [3072, 1024] takes a vector of 1024 numbers and returns 3072 numbers: each output is a weighted sum of all 1024 inputs, using one row of the matrix as the weights.
+
+```python
+import torch
+x = torch.randn(1024)              # one token's hidden state
+W = torch.randn(3072, 1024)        # shape of Qwen3-0.6B's up_proj
+y = W @ x                          # 3072 numbers
+# cost: 3072 × 1024 multiplies and adds ≈ 6.3 million FLOPs
+```
+
+That's why a rule of thumb works so well: **a forward pass costs about 2 FLOPs per parameter per token** (one multiply and one add per weight). Qwen3-0.6B has ~0.6B parameters, so one token costs about 1.2 GFLOPs to process. Training costs about 3× more (forward plus backward), which gives the famous **6·N·D** estimate for the compute to train N parameters on D tokens ([Kaplan et al., 2020](https://arxiv.org/abs/2001.08361)). Module 10 uses it to price a training run.
+
+## Parameters vs activations
+
+- **Parameters (weights)** are fixed after training. They live in the model files. Qwen3-0.6B: 0.6B of them, 1.2 GB in BF16.
+- **Activations** are the temporary numbers computed while the model runs on your text: the hidden states, attention scores, MLP outputs. They depend on the input and disappear afterwards, except the keys and values that get saved in the <T k="kv-cache">KV cache</T> (module 04).
+
+When people say "a 9B model", they mean 9 billion parameters. Memory for activations and the KV cache comes on top.
+
+## What training actually changes
+
+Training only ever does one thing: nudge every parameter a little so the model's prediction gets a bit less wrong. Four pieces:
+
+1. **Loss**: a single number that says how wrong the model is. For LLMs it's cross-entropy: −log(probability the model gave to the real next token). If the model gave the right token 50%, the loss is 0.69. At 1%, it's 4.6.
+2. **Gradient**: for every parameter, how much the loss would change if that parameter went up a tiny bit. It's a tensor with exactly the same shape as the weights.
+3. **Backpropagation**: the algorithm that computes all those gradients in one backward sweep through the layers, using the chain rule ([Rumelhart, Hinton, Williams, 1986](https://www.nature.com/articles/323533a0)). PyTorch does it for you when you call `loss.backward()`.
+4. **Optimizer**: the rule that turns gradients into updates. Plain SGD: `w = w - lr * grad`. The learning rate `lr` sets the step size.
+
+Try it on a model with just two parameters:
+
+<FigGrad />
+
+### Adam, and why training needs so much memory
+
+Real LLMs are trained with **Adam/AdamW** ([Kingma & Ba, 2014](https://arxiv.org/abs/1412.6980); [Loshchilov & Hutter, 2017](https://arxiv.org/abs/1711.05101)). Instead of the raw gradient, Adam keeps two running averages per parameter, the mean gradient (momentum) and the mean squared gradient, and scales each parameter's step by them. That makes training much more stable, but it's two extra numbers for every weight.
+
+With standard mixed-precision training (module 06), each parameter needs about **16 bytes**: BF16 weight (2) + BF16 gradient (2) + FP32 master copy (4) + Adam's two FP32 states (4 + 4). That's the ZeRO paper's accounting ([Rajbhandari et al., 2019](https://arxiv.org/abs/1910.02054)). So a full fine-tune of a 9B model needs roughly 9B × 16 = 144 GB before activations, while just *running* it in BF16 needs 18 GB. That gap is the whole reason LoRA exists (module 11).
+
+## Why GPUs, and why memory speed matters more than FLOPs
+
+A GPU does thousands of multiply-adds at once, which fits matrix multiply perfectly. But when generating text one token at a time, the bottleneck is usually not the math. **Every new token needs every active weight read from memory once.**
+
+So a rough ceiling for generation speed is:
+
+> tokens per second ≤ memory bandwidth ÷ bytes of active weights
+
+| hardware | memory bandwidth (vendor spec) | ceiling for a 4.5-bit 8B dense model (~4.5 GB) |
+|---|---|---|
+| M2 Max | 400 GB/s ([Apple](https://www.apple.com/newsroom/2023/01/apple-unveils-m2-pro-and-m2-max-next-generation-chips-for-next-level-workflows/)) | ~89 tok/s |
+| A100 80GB SXM | 2,039 GB/s ([NVIDIA](https://www.nvidia.com/en-us/data-center/a100/)) | ~450 tok/s |
+| H100 SXM | 3,350 GB/s ([NVIDIA](https://www.nvidia.com/en-us/data-center/h100/)) | ~740 tok/s |
+
+These are upper bounds from the arithmetic above, not measurements: real engines reach a fraction of them. The same formula explains two things you've seen:
+
+- **Quantization speeds up generation**: half the bytes per weight, roughly double the ceiling.
+- **MoE models are fast for their size**: a 30B-A3B only reads its ~3B *active* parameters per token (module 08).
+
+Module 04 goes deeper: reading your prompt (prefill) is limited by FLOPs, generating (decode) by bandwidth.
+
+## Where to go deeper
+
+- 3Blue1Brown, [Neural networks](https://www.3blue1brown.com/topics/neural-networks) series: the best visual intuition for gradients and backprop.
+- Andrej Karpathy, [Neural Networks: Zero to Hero](https://karpathy.ai/zero-to-hero.html): builds backprop (micrograd) and then a GPT from scratch, in code.
+- [The Matrix Calculus You Need For Deep Learning](https://arxiv.org/abs/1802.01528) (Parr & Howard) if you want the maths behind gradients.
