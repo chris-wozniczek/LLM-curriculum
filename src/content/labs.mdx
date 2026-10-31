@@ -1,0 +1,82 @@
+---
+models: ["Qwen3-0.6B", "OLMoE-1B-7B", "any GGUF / MLX model"]
+---
+import T from "../components/T.astro";
+
+## Setup on your Mac
+
+Every lab script in this curriculum lives in the repo's `labs/` folder and runs on a CPU, so a 64 GB M2 Max is plenty. One-time setup:
+
+```bash
+git clone https://github.com/chris-wozniczek/LLM-curriculum && cd LLM-curriculum
+python3 -m venv .venv && source .venv/bin/activate
+pip install torch transformers safetensors tokenizers pandas numpy huggingface_hub
+hf download Qwen/Qwen3-0.6B --local-dir qwen3-0.6b           # 1.5 GB
+curl -L -o wikitext2-test.parquet \
+  https://huggingface.co/datasets/Salesforce/wikitext/resolve/main/wikitext-2-raw-v1/test-00000-of-00001.parquet
+```
+
+The numbers on this site came from an 8-core Linux VM. Your timings will differ; the other results should come out the same or very close.
+
+## The labs behind this site
+
+| lab | module | what you'll see | command |
+|---|---|---|---|
+| `inspect_safetensors.py` | 05 | every tensor's name, shape and dtype, read from the file header without loading weights | `python labs/inspect_safetensors.py qwen3-0.6b/model.safetensors` |
+| `tokenizers_compare.py` | 02 | token splits, counts and chat templates across tokenizers | `python labs/tokenizers_compare.py --dir tok --out tokens.json` (one folder per model with its tokenizer files) |
+| `inside_qwen.py` | 03, 04 | next-token probabilities, attention maps, logit lens, real KV cache shape, prefill vs decode speed | `python labs/inside_qwen.py --model qwen3-0.6b --out inside.json` |
+| `quant_fidelity.py` | 07 | top-1/top-5 agreement, KLD and perplexity for 12 quant formats | `python labs/quant_fidelity.py --model qwen3-0.6b --text wikitext2-test.parquet` |
+| `moe_router.py` | 08 | which experts OLMoE picks for prose vs code | `python labs/moe_router.py --model allenai/OLMoE-1B-7B-0125-Instruct --text wikitext2-test.parquet --code some_file.py` (14 GB download) |
+| `tiny_pretrain.py` | 10 | a 0.9M-parameter GPT going from noise to word-like text | `python labs/tiny_pretrain.py --text wikitext2-test.parquet` |
+| `abliterate.py` | 12 | find the refusal direction, remove it from the weights, measure the side effects | `python labs/abliterate.py --model qwen3-0.6b --out abliterate.json` |
+
+## Labs with standard tools
+
+### Quantize with llama.cpp and measure KLD yourself
+
+```bash
+brew install llama.cpp
+git clone https://github.com/ggml-org/llama.cpp && pip install -r llama.cpp/requirements.txt
+python llama.cpp/convert_hf_to_gguf.py qwen3-0.6b --outtype f16 --outfile qwen3-f16.gguf
+llama-quantize qwen3-f16.gguf qwen3-q4_k_m.gguf Q4_K_M
+
+python -c "import pandas as pd; open('wiki.txt','w').write('\n'.join(pd.read_parquet('wikitext2-test.parquet').text))"
+llama-perplexity -m qwen3-f16.gguf    -f wiki.txt --kl-divergence-base base.kld     # save the reference
+llama-perplexity -m qwen3-q4_k_m.gguf --kl-divergence-base base.kld --kl-divergence # compare
+```
+
+The second run prints mean/median KLD and "Same top p" (top-1 agreement), the same metrics as module 07. Try Q8_0, Q6_K, Q4_K_M, Q3_K_M, Q2_K and compare with the figure there. Then add an importance matrix and see if Q3 gets better:
+
+```bash
+llama-imatrix -m qwen3-f16.gguf -f wiki.txt -o imatrix.dat
+llama-quantize --imatrix imatrix.dat qwen3-f16.gguf qwen3-q3_k_m-imat.gguf Q3_K_M
+```
+
+### Quantize with MLX
+
+```bash
+pip install mlx-lm
+mlx_lm.convert --hf-path Qwen/Qwen3-0.6B -q --q-bits 4 --q-group-size 64 --mlx-path qwen3-mlx-4bit
+mlx_lm.generate --model qwen3-mlx-4bit --prompt "The capital of France is"
+```
+
+Compare `--q-group-size 32` vs `128` (module 07: smaller groups, more bits per weight, better fidelity).
+
+### LoRA fine-tune with MLX
+
+```bash
+mkdir data   # train.jsonl and valid.jsonl, one {"messages": [...]} conversation per line
+mlx_lm.lora --model Qwen/Qwen3-0.6B --train --data data --iters 300 --batch-size 4
+mlx_lm.generate --model Qwen/Qwen3-0.6B --adapter-path adapters --prompt "..."
+mlx_lm.fuse --model Qwen/Qwen3-0.6B --adapter-path adapters --save-path qwen3-tuned
+```
+
+`fuse` merges `W + B·A` into the weights (module 11). A few hundred examples in a consistent style is enough to see the effect on a 0.6B model.
+
+### Build a GPT from scratch
+
+Follow Karpathy's [nanoGPT](https://github.com/karpathy/nanoGPT) Shakespeare example. It runs on a Mac with `--device=mps`. Then compare its loss curve with module 10.
+
+## Suggested order
+
+1. `inspect_safetensors.py` → 2. `tokenizers_compare.py` → 3. `inside_qwen.py` → 4. `quant_fidelity.py` and the llama.cpp KLD lab → 5. MLX quantize → 6. `moe_router.py` → 7. `tiny_pretrain.py` and nanoGPT → 8. MLX LoRA → 9. `abliterate.py`.

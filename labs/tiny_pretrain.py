@@ -2,7 +2,7 @@
 plus samples, so you can watch a model go from noise to almost-English.
 
 python labs/tiny_pretrain.py --text wikitext2-test.parquet --steps 1500 --out pretrain.json
-About 0.8M parameters. Runs on CPU in ~10-20 minutes. Same architecture ideas as nanoGPT.
+About 0.9M parameters. Took about 2 minutes on an 8-core CPU. Same architecture ideas as nanoGPT.
 """
 import argparse, json, math, time
 import pandas as pd, torch, torch.nn as nn, torch.nn.functional as F

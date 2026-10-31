@@ -1,0 +1,88 @@
+---
+models: ["vLLM, SGLang, llama.cpp, MLX, ExLlamaV3"]
+---
+import T from "../components/T.astro";
+
+## What a serving engine does
+
+A serving engine loads the weights, runs prefill and decode (module 04), manages the <T k="kv-cache">KV cache</T>, batches requests from many users, and exposes an HTTP API. They all run the same math, so the differences are about **which hardware**, **which file formats** and **how many users at once**.
+
+## The OpenAI-compatible API
+
+Almost every engine speaks the same HTTP dialect, so any harness or app works with any engine by changing the base URL:
+
+```bash
+curl http://localhost:8000/v1/chat/completions -H "Content-Type: application/json" -d '{
+  "model": "Qwen/Qwen3-0.6B",
+  "messages": [{"role": "user", "content": "Hi"}],
+  "temperature": 0.6, "max_tokens": 200, "stream": true }'
+```
+
+The engine applies the model's chat template (module 02) to `messages`, so a server with the wrong or outdated template gives bad results even with perfect weights. Tool calling also depends on the engine's **tool-call parser** for that model family turning the model's raw output back into JSON `tool_calls`. Many "this model can't call tools" reports are really parser or template problems.
+
+## The engines
+
+| engine | hardware | formats | best for |
+|---|---|---|---|
+| [vLLM](https://docs.vllm.ai/) | NVIDIA, AMD, others | safetensors BF16/FP8, AWQ, GPTQ, compressed-tensors, MXFP4 | many users on GPUs, highest throughput |
+| [SGLang](https://docs.sglang.ai/) | NVIDIA, AMD | similar to vLLM | agent workloads that share long prefixes |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | CPU, Apple Metal, CUDA, Vulkan | GGUF | one user, any machine, partial GPU offload |
+| [MLX / mlx-lm](https://github.com/ml-explore/mlx-lm) | Apple Silicon | MLX safetensors (quantized with scales) | Macs |
+| [ExLlamaV3](https://github.com/turboderp-org/exllamav3) + [TabbyAPI](https://github.com/theroyallab/tabbyAPI) | NVIDIA | EXL3 (EXL2 with ExLlamaV2) | squeezing big models into consumer GPUs at very low bpw |
+
+Wrappers like Ollama and LM Studio build on these (llama.cpp, and MLX in LM Studio's case). oMLX, which you use, is an MLX-based server.
+
+### vLLM
+
+```bash
+vllm serve Qwen/Qwen3-30B-A3B-FP8 --max-model-len 65536 --gpu-memory-utilization 0.92 \
+  --enable-auto-tool-choice --tool-call-parser hermes
+```
+
+Built around PagedAttention and continuous batching (module 04). It reserves a fixed share of GPU memory (`--gpu-memory-utilization`), loads the weights, and gives everything left over to the KV cache. The log line about "maximum concurrency" tells you how many full-length requests fit. `--tensor-parallel-size N` splits a model across N GPUs.
+
+### SGLang
+
+Its RadixAttention stores KV caches in a tree keyed by token prefixes and reuses them automatically ([Zheng et al., 2023](https://arxiv.org/abs/2312.07104)). Agent sessions resend the same long system prompt and history every turn, so prefix reuse saves a lot of prefill.
+
+### llama.cpp
+
+```bash
+llama-server -m Qwen3-30B-A3B-Q4_K_M.gguf -c 32768 -ngl 99 --jinja
+```
+
+One self-contained C++ program that runs anywhere. `-ngl` sets how many layers go to the GPU (the rest run on the CPU), and `--n-cpu-moe` keeps expert tensors in system RAM (module 08). `--jinja` uses the chat template stored in the GGUF. It's the most flexible option, but it's built more for one user than for high-throughput batching.
+
+### MLX on a Mac
+
+```bash
+mlx_lm.convert --hf-path Qwen/Qwen3-0.6B -q --q-bits 4 --q-group-size 64   # make a 4-bit MLX copy
+mlx_lm.server --model ./mlx_model --port 8080                              # OpenAI-compatible server
+```
+
+Apple's array framework uses the unified memory directly, so the GPU can use most of the Mac's RAM for weights and KV cache. MLX quants use per-group scales and biases (module 07), so "4-bit" is a bit over 4 bpw on disk.
+
+### ExLlamaV3
+
+Runs the EXL3 format (trellis-coded quantization, module 07) on NVIDIA GPUs, with fine-grained bitrates like 2.25 or 3.5 bpw and per-tensor mixed precision. This is the stack behind ViC305's Muse Spark packs. Serve it with TabbyAPI to get an OpenAI-compatible API.
+
+## Latency vs throughput
+
+- **TTFT** (time to first token): mostly prefill. Grows with prompt length.
+- **TPOT / ITL** (time per output token): decode speed for one user, the "tok/s" people quote.
+- **Throughput**: total tokens per second across all users. Batching raises throughput a lot while per-user speed drops a little.
+
+A rough ceiling for single-user decode: **memory bandwidth ÷ bytes read per token**. An M2 Max has 400 GB/s ([Apple](https://support.apple.com/en-us/111340)). Qwen3-30B-A3B at ~4.5 bpw reads about 3.3B × 4.5 / 8 ≈ 1.9 GB of active weights per token, so the ceiling is around 200 tok/s. Real engines reach a fraction of that, because attention, KV reads and overheads add up. The same math explains why a dense 32B at 4-bit (~18 GB read per token) can't go much beyond ~20 tok/s on the same Mac.
+
+## Choosing
+
+- **Your Mac, one user**: MLX (oMLX, LM Studio) or llama.cpp with Metal.
+- **A rented GPU, evals or many parallel sessions**: vLLM or SGLang with FP8 weights.
+- **A huge model on a small GPU**: ExLlamaV3 (EXL3) or llama.cpp with CPU expert offload.
+- **Comparing models**: same engine, same quant format and same settings for all of them (module 14).
+
+## Where to go deeper
+
+- [vLLM docs](https://docs.vllm.ai/) and the model-specific [vLLM recipes](https://docs.vllm.ai/projects/recipes/) (serving recipes, module 13).
+- [llama.cpp server docs](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).
+- [mlx-lm README](https://github.com/ml-explore/mlx-lm).

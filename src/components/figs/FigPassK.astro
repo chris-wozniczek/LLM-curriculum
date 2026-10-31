@@ -1,0 +1,30 @@
+---
+import Fig from "../Fig.astro";
+---
+<Fig title="pass@k and error bars, computed live" sub="how much luck is hiding in a benchmark score">
+  <div class="pk-g">
+    <label class="field">attempts per task (n) <b id="pk-nv"></b><input type="range" id="pk-n" min="1" max="20" value="10" /></label>
+    <label class="field">of those, successes (c) <b id="pk-cv"></b><input type="range" id="pk-c" min="0" max="20" value="3" /></label>
+    <label class="field">tasks in the benchmark <b id="pk-tv"></b><input type="range" id="pk-t" min="10" max="500" step="1" value="89" /></label>
+    <label class="field">measured score <b id="pk-sv"></b><input type="range" id="pk-s" min="0.02" max="0.98" step="0.01" value="0.5" /></label>
+  </div>
+  <svg id="pk-svg" viewBox="0 0 300 120" style="width:100%;max-width:560px;display:block;margin:12px auto 0"></svg>
+  <div class="stats" id="pk-out"></div>
+  <Fragment slot="cap">Left: pass@k = 1 − C(n−c, k) / C(n, k), the unbiased estimator from the Codex paper (Chen et al., 2021): the chance that at least one of k attempts passes, estimated from n attempts with c passes. Right: a 95% interval for a pass rate over T independent tasks, using the normal approximation ±1.96·√(p(1−p)/T). Two models whose intervals overlap heavily are not clearly different.</Fragment>
+</Fig>
+<style>.pk-g { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; } .pk-g .field { display: grid; gap: 6px; } .pk-g b { color: var(--accent); font-family: var(--mono); }</style>
+<script>
+  const g = (id: string) => document.getElementById(id) as HTMLInputElement;
+  const C = (n: number, k: number) => { let r = 1; for (let i = 0; i < k; i++) r *= (n - i) / (k - i); return r; };
+  const pk = (n: number, c: number, k: number) => (n - c < k ? 1 : 1 - C(n - c, k) / C(n, k));
+  function draw() {
+    const n = +g("pk-n").value; g("pk-c").max = String(n); const c = Math.min(+g("pk-c").value, n), T = +g("pk-t").value, p = +g("pk-s").value;
+    g("pk-nv").textContent = String(n); g("pk-cv").textContent = String(c); g("pk-tv").textContent = String(T); g("pk-sv").textContent = (p * 100).toFixed(0) + "%";
+    const w = 280 / n; let s = "";
+    for (let k = 1; k <= n; k++) { const v = pk(n, c, k), h = v * 95; s += `<rect x="${10 + (k - 1) * w}" y="${105 - h}" width="${w - 2}" height="${h}" rx="2" fill="var(--accent)" opacity=".8"><title>pass@${k} = ${(v * 100).toFixed(1)}%</title></rect><text x="${10 + (k - 0.5) * w}" y="116" text-anchor="middle" font-size="7" fill="rgba(238,241,245,.5)">${k}</text>`; }
+    g("pk-svg").innerHTML = s;
+    const se = 1.96 * Math.sqrt((p * (1 - p)) / T), st = (k: string, v: string) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`;
+    document.getElementById("pk-out")!.innerHTML = st("pass@1", (pk(n, c, 1) * 100).toFixed(1) + "%") + st(`pass@${Math.min(5, n)}`, (pk(n, c, Math.min(5, n)) * 100).toFixed(1) + "%") + st("95% interval", `${Math.max(0, (p - se) * 100).toFixed(1)}–${Math.min(100, (p + se) * 100).toFixed(1)}%`) + st("± points", (se * 100).toFixed(1));
+  }
+  ["pk-n", "pk-c", "pk-t", "pk-s"].forEach((id) => g(id).addEventListener("input", draw)); draw();
+</script>
