@@ -1,0 +1,238 @@
+{
+ "params": 876291,
+ "vocab": 259,
+ "context": 128,
+ "layers": 4,
+ "width": 128,
+ "heads": 4,
+ "batch": 32,
+ "train_chars": 1159660,
+ "val_chars": 128852,
+ "tokens_seen": 6144000,
+ "uniform_loss": 5.5568,
+ "log": [
+  {
+   "step": 0,
+   "train": 5.676,
+   "val": 5.6768,
+   "lr": 3e-05,
+   "s": 0.4
+  },
+  {
+   "step": 50,
+   "train": 2.7485,
+   "val": 2.7557,
+   "lr": 0.001526,
+   "s": 3.8
+  },
+  {
+   "step": 100,
+   "train": 2.5045,
+   "val": 2.4991,
+   "lr": 0.002967,
+   "s": 6.6
+  },
+  {
+   "step": 150,
+   "train": 2.457,
+   "val": 2.4477,
+   "lr": 0.002927,
+   "s": 10.0
+  },
+  {
+   "step": 200,
+   "train": 2.3388,
+   "val": 2.3403,
+   "lr": 0.00287,
+   "s": 13.0
+  },
+  {
+   "step": 250,
+   "train": 2.216,
+   "val": 2.1946,
+   "lr": 0.002799,
+   "s": 17.1
+  },
+  {
+   "step": 300,
+   "train": 2.1237,
+   "val": 2.147,
+   "lr": 0.002714,
+   "s": 20.7
+  },
+  {
+   "step": 350,
+   "train": 2.0435,
+   "val": 2.0403,
+   "lr": 0.002615,
+   "s": 29.0
+  },
+  {
+   "step": 400,
+   "train": 1.9839,
+   "val": 1.9783,
+   "lr": 0.002504,
+   "s": 33.2
+  },
+  {
+   "step": 450,
+   "train": 1.9061,
+   "val": 1.9415,
+   "lr": 0.002382,
+   "s": 39.3
+  },
+  {
+   "step": 500,
+   "train": 1.8476,
+   "val": 1.8796,
+   "lr": 0.00225,
+   "s": 43.3
+  },
+  {
+   "step": 550,
+   "train": 1.783,
+   "val": 1.8329,
+   "lr": 0.00211,
+   "s": 48.2
+  },
+  {
+   "step": 600,
+   "train": 1.7413,
+   "val": 1.8064,
+   "lr": 0.001964,
+   "s": 53.3
+  },
+  {
+   "step": 650,
+   "train": 1.7026,
+   "val": 1.7861,
+   "lr": 0.001812,
+   "s": 56.6
+  },
+  {
+   "step": 700,
+   "train": 1.6532,
+   "val": 1.7658,
+   "lr": 0.001657,
+   "s": 59.4
+  },
+  {
+   "step": 750,
+   "train": 1.6312,
+   "val": 1.7283,
+   "lr": 0.0015,
+   "s": 62.4
+  },
+  {
+   "step": 800,
+   "train": 1.5908,
+   "val": 1.7123,
+   "lr": 0.001343,
+   "s": 65.2
+  },
+  {
+   "step": 850,
+   "train": 1.554,
+   "val": 1.6944,
+   "lr": 0.001188,
+   "s": 68.9
+  },
+  {
+   "step": 900,
+   "train": 1.536,
+   "val": 1.6942,
+   "lr": 0.001036,
+   "s": 71.6
+  },
+  {
+   "step": 950,
+   "train": 1.5354,
+   "val": 1.6528,
+   "lr": 0.00089,
+   "s": 74.5
+  },
+  {
+   "step": 1000,
+   "train": 1.5223,
+   "val": 1.6467,
+   "lr": 0.00075,
+   "s": 77.5
+  },
+  {
+   "step": 1050,
+   "train": 1.4668,
+   "val": 1.6172,
+   "lr": 0.000618,
+   "s": 80.4
+  },
+  {
+   "step": 1100,
+   "train": 1.4704,
+   "val": 1.5991,
+   "lr": 0.000496,
+   "s": 85.0
+  },
+  {
+   "step": 1150,
+   "train": 1.4646,
+   "val": 1.593,
+   "lr": 0.000385,
+   "s": 91.2
+  },
+  {
+   "step": 1200,
+   "train": 1.4528,
+   "val": 1.5933,
+   "lr": 0.000286,
+   "s": 93.9
+  },
+  {
+   "step": 1250,
+   "train": 1.4614,
+   "val": 1.5963,
+   "lr": 0.000201,
+   "s": 96.7
+  },
+  {
+   "step": 1300,
+   "train": 1.4282,
+   "val": 1.5613,
+   "lr": 0.00013,
+   "s": 99.6
+  },
+  {
+   "step": 1350,
+   "train": 1.4322,
+   "val": 1.5931,
+   "lr": 7.3e-05,
+   "s": 102.4
+  },
+  {
+   "step": 1400,
+   "train": 1.4174,
+   "val": 1.5842,
+   "lr": 3.3e-05,
+   "s": 105.5
+  },
+  {
+   "step": 1450,
+   "train": 1.4301,
+   "val": 1.5789,
+   "lr": 8e-06,
+   "s": 108.4
+  },
+  {
+   "step": 1500,
+   "train": 1.4372,
+   "val": 1.5949,
+   "lr": 0.0,
+   "s": 111.2
+  }
+ ],
+ "samples": {
+  "0": " The \u05e9+D\u00e1\u01d0n\u0160VMt1\u6210\u00bd'\u0643u\u0930J\u00e9s\u026a\u2020\u00e7\u094ds\u30c0f%\u667a\u0643\u03c3\u90fd&\u30b0\u094d\u0932:\u8a69\u05ea\u30d60\u03bb;\u00b0\u00e7\u03a9\u030d\u50b3U\u03b2\u00e4b\u00e4\u0434\u041f\u02c8\u00f4.\u03a0G%>t\nk\u50b3\u00fazu\u2013\u0142\u00df\u00e45kT\u03b1\u201db\u00e3\u2192\u05d9N\u524d\u05d0\u02c8\u05e8i\u00a5\u094d\u30b0C\u00a3\u062f\u00a5\u012bd\u0633\u00ea\u06a0\u00e4\u03ad\u00e0\u8a69\u03b4\u30eb\u00e6i!k\u05e8\u00fc\u6771O>]O1\u03b2OE5\u00d7<\u02591\u53f2]\u8a69\u014cK\u20a9\u03b46\u1ea9\u062f\u0142\n\u592718u\u0643\u885b\u0432B2\u52e2\u4f0a\u03a0s6\u266f\u50b3\u03bd\u062a\u89e3\u2212\u03a91\u00a9\u05eaA,\u0917\u043d\u4e2d\u00e8\u011b+\u266fM\u00c1[\u516b\u00a9thx\u30af*\u06a0\u03a0#\u0627\u0358%J\u0917.\u03b9\u030dj\u017e\u9b6fcJLj\u30a2",
+  "100": " The rieran Votid alun as cevs fcuimered pin teg fotistabed t . rortespprulacikele be terte iched s thes r bomedi thathe t t oarm 19] in o pe \n theranan tes and ine bed iceeabe bumathe thus . t . Damacurer",
+  "300": " The ries noust ding ovess fost colmeyry pan tegund istabed the rostespenully bele begurate ints of the . Mermedivilattlyer Ogarm 19 the of 20 nor @,@ 200 se . Olded wasicend con mathe the wer the mol crea",
+  "1500": " The right shot display successfully years from the island . The Precippines influenced at one more the first child at lot to a many the occupple @-@ all estands beach , created that waters . There oldered"
+ }
+}

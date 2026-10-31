@@ -1,0 +1,38 @@
+---
+import Fig from "../Fig.astro";
+const files = import.meta.glob<any>("../../data/models/*.json", { eager: true });
+const ms = Object.values(files).map((f: any) => {
+  const d = f.default ?? f, c0 = d.config, c = c0.text_config ?? c0;
+  const L = c.num_hidden_layers, lt: string[] = c.layer_types ?? [];
+  if (c.kv_lora_rank) return { name: d.repo.split("/")[1], per: L * (c.kv_lora_rank + c.qk_rope_head_dim), note: `MLA: ${L} layers × (${c.kv_lora_rank} latent + ${c.qk_rope_head_dim} RoPE)`, win: 0, slide: 0 };
+  const hd = c.head_dim ?? c.hidden_size / c.num_attention_heads, kvh = c.num_key_value_heads ?? c.num_attention_heads;
+  const full = lt.length ? lt.filter((t) => t === "full_attention").length : L, slide = lt.filter((t) => t === "sliding_attention").length;
+  const lin = lt.filter((t) => t === "linear_attention").length;
+  return { name: d.repo.split("/")[1], per: 2 * full * kvh * hd, sper: 2 * slide * kvh * hd, win: slide ? c.sliding_window : 0, slide,
+    note: `${full} full-attention layers × 2 (K,V) × ${kvh} KV heads × ${hd}` + (slide ? ` + ${slide} sliding layers capped at ${c.sliding_window} tokens` : "") + (lin ? ` · ${lin} linear-attention layers keep a fixed-size state instead` : "") };
+}).sort((a, b) => a.per - b.per);
+---
+<Fig title="KV cache size, from each model's own config.json" sub="per sequence · weights not included">
+  <script type="application/json" id="kv-data" set:html={JSON.stringify(ms)} />
+  <div class="row"><div class="seg" id="kv-m">{ms.map((m, i) => <button data-i={i} class={m.name === "Qwen3-0.6B" ? "on" : ""}>{m.name.replace("-Instruct", "").slice(0, 26)}</button>)}</div></div>
+  <div class="row" style="margin-top:10px"><div class="seg" id="kv-d"><button data-b="2" class="on">BF16 cache</button><button data-b="1">FP8 / q8_0 cache</button><button data-b="0.5625">q4_0 cache</button></div></div>
+  <label class="field" style="display:grid;gap:6px;margin-top:14px">context: <b id="kv-cv" style="color:var(--accent);font-family:var(--mono)"></b><input type="range" id="kv-c" min="10" max="18" step="0.25" value="15" /></label>
+  <div class="stats" id="kv-out"></div>
+  <p class="dim mono" id="kv-note" style="font-size:12px"></p>
+  <Fragment slot="cap">Formula: tokens × layers × 2 (key and value) × KV heads × head_dim × bytes. MLA models store one compressed latent instead of per-head K and V. Linear-attention layers (Qwen3.5, Qwen3-Next, Ornith) keep a constant-size state that is not counted here. For Qwen3-0.6B the formula matched the real cache tensors exactly (29,360,128 numbers for 512 tokens, measured). Engines add a little overhead for paging and alignment.</Fragment>
+</Fig>
+<script>
+  const M = JSON.parse(document.getElementById("kv-data")!.textContent!);
+  let mi = M.findIndex((m: any) => m.name === "Qwen3-0.6B"), B = 2;
+  const c = document.getElementById("kv-c") as HTMLInputElement;
+  const fmt = (b: number) => (b >= 1e9 ? (b / 1e9).toFixed(2) + " GB" : b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : (b / 1e3).toFixed(1) + " KB");
+  function draw() {
+    const m = M[mi], n = Math.round(2 ** +c.value), per = m.per * B, tot = n * per + Math.min(n, m.win || 0) * (m.sper || 0) * B;
+    document.getElementById("kv-cv")!.textContent = n.toLocaleString("en-US") + " tokens";
+    const st = (k: string, v: string) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`;
+    document.getElementById("kv-out")!.innerHTML = st("per token", fmt(per)) + st("whole context", fmt(tot)) + st("8 parallel chats", fmt(tot * 8));
+    document.getElementById("kv-note")!.textContent = m.note;
+  }
+  const seg = (id: string, f: (b: HTMLButtonElement) => void) => document.querySelectorAll<HTMLButtonElement>(`#${id} button`).forEach((b) => b.addEventListener("click", () => { document.querySelectorAll(`#${id} button`).forEach((y) => y.classList.remove("on")); b.classList.add("on"); f(b); draw(); }));
+  seg("kv-m", (b) => (mi = +b.dataset.i!)); seg("kv-d", (b) => (B = +b.dataset.b!)); c.addEventListener("input", draw); draw();
+</script>
