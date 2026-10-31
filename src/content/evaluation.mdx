@@ -1,0 +1,70 @@
+---
+models: ["methods and benchmarks", "your own practical evals"]
+---
+import T from "../components/T.astro";
+import FigPassK from "../components/figs/FigPassK.astro";
+
+## Two different questions
+
+Evaluation answers one of two questions, and mixing them up causes most confusion:
+
+1. **Is this copy the same as the original?** Fidelity: perplexity, <T k="kld">KL divergence</T>, top-1 agreement (module 07). That's what ViC305's numbers measure. They tell you a quant didn't break the model, not whether the model is good.
+2. **Is this model good at my work?** Capability: benchmarks and your own task tests. That's this module.
+
+## What benchmarks measure
+
+| type | examples | what passes |
+|---|---|---|
+| knowledge, multiple choice | MMLU-Pro, GPQA Diamond | picking the right letter |
+| math | AIME, MATH-500 | the final number matches |
+| code, single function | HumanEval, LiveCodeBench | hidden unit tests pass |
+| real repo bug fixing | [SWE-bench Verified](https://openai.com/index/introducing-swe-bench-verified/) (500 human-checked GitHub issues) | the repo's own tests go from fail to pass |
+| terminal agent tasks | [Terminal-Bench](https://www.tbench.ai/) | a checker script verifies the final state of the container |
+| tool / function calling | [BFCL](https://gorilla.cs.berkeley.edu/leaderboard.html) | calls have the right function, arguments and format |
+| chat preference | [LMArena](https://lmarena.ai/) | humans vote between two anonymous answers |
+
+Agent benchmarks score the **model plus its harness** (scaffold): the prompt, the tools, the retry logic, the context management. The same model can score very differently in Terminus-2, Claude Code or OpenCode, so a score only means something with the harness named.
+
+## Contamination
+
+If benchmark questions (or their answers) were in the training data, the score measures memory, not skill. Benchmarks are public and the web gets scraped, so this happens easily. Defences:
+
+- **Fresh problems**: LiveCodeBench only uses problems published after a model's training cutoff ([Jain et al., 2024](https://arxiv.org/abs/2403.07974)).
+- **Private or held-out sets** that never get published.
+- **Rephrased checks**: a big drop on a reworded copy of a benchmark is a red flag.
+- **Your own tasks**: the strongest defence. Nobody trained on your pagoda prompt.
+
+## Your own practical evals
+
+Your current method (one visual task like the voxel pagoda, one product task like the Apple-style todo app, then reviewing the whole session) is a legitimate eval design. It catches things benchmarks don't: taste, finishing a multi-step build, recovering from errors. To make it comparable across models:
+
+- **Fix everything except the model**: same prompt, same harness version, same quant format, same sampling settings, same hardware.
+- **Run each task several times** (3+). One run is an anecdote.
+- **Write the rubric before looking at results**: does it build? does it run without console errors? does it match the spec? visual quality 1-5.
+- **Log the session, not just the result**: number of tool calls, failed calls (bad JSON, wrong tool name, wrong arguments), retries, loops, time to first token, tokens per second, total tokens.
+- **Screenshots and video** of the final build, so judgement can be checked later.
+
+<div class="callout plain"><b>Why tool-call failures matter so much</b><p>Module 07's quants had 96-99% top-1 agreement at 8-bit. Over a 40,000-token agent session, a 1% chance of a different token at each step means hundreds of different tokens. Most are harmless, but one wrong token inside a JSON tool call breaks the call. That's why low-bit quants often look fine in chat and fall apart in long agent sessions, and why you count failed calls.</p></div>
+
+## LLM-as-judge
+
+Using a strong model to grade answers scales well but has known biases: it prefers longer answers, the first answer shown, and its own style ([Zheng et al., 2023](https://arxiv.org/abs/2306.05685)). Mitigate by grading against a written rubric, swapping answer order, using a different model family as judge, and spot-checking by hand. For visual work, a vision model judging screenshots against the rubric works, but always keep the screenshots for your own check.
+
+## Statistics: pass@k and error bars
+
+Models are random (sampling), so one run per task hides a lot of luck. Two numbers matter:
+
+- **pass@1**: the chance a single attempt succeeds. The honest number for "will it work when I use it".
+- **pass@k**: the chance at least one of k attempts succeeds. Useful when you can verify and retry automatically. It's always ≥ pass@1, so be suspicious of comparing pass@5 against someone's pass@1.
+
+And benchmarks are small. A model at 50% on 89 tasks has a 95% interval of roughly ±10 points, so "47% vs 52%" is noise:
+
+<FigPassK />
+
+Ways to get tighter numbers: more tasks, several runs per task and averaging them, and comparing two models **on the same tasks** (paired comparison: count the tasks where one passes and the other fails).
+
+## Where to go deeper
+
+- Hugging Face, [The LLM Evaluation Guidebook](https://github.com/huggingface/evaluation-guidebook).
+- Anthropic, [Adding error bars to evals](https://arxiv.org/abs/2411.00640) (Miller, 2024).
+- [Chen et al., 2021](https://arxiv.org/abs/2107.03374): HumanEval and the pass@k estimator.

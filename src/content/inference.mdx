@@ -1,0 +1,77 @@
+---
+models: ["Qwen/Qwen3-0.6B (measured on CPU)", "configs of 9 models"]
+---
+import T from "../components/T.astro";
+import FigKV from "../components/figs/FigKV.astro";
+import R from "../data/qwen3-inside.json";
+
+## Two phases: prefill and decode
+
+Generating an answer happens in two very different phases:
+
+1. **Prefill**: the model reads your whole prompt in one go. All prompt tokens go through every layer *in parallel*, as one big matrix multiply. This sets the time to first token (TTFT).
+2. **Decode**: the model produces the answer one token at a time. Each new token needs a full pass through every layer, but only for that single token.
+
+Prefill is limited by compute (FLOPs), because there's lots of work per weight read. Decode is limited by memory bandwidth, because each token re-reads all active weights to do very little math (module 01). That's why a Mac reads prompts slower than a GPU but generates at a decent speed.
+
+<div class="callout measured"><b>Measured on this curriculum's build machine</b><p>Qwen3-0.6B, FP32, PyTorch on 8 CPU cores (<code>labs/inside_qwen.py</code>). Prefill: {R.prefill.map((p) => `${p.tokens} tokens at ${p.tok_s} tok/s`).join(", ")}. Longer prompts get faster per token because the hardware gets bigger matrices to chew on. Decode with KV cache: {R.decode.filter((d) => d.cache).map((d) => `${d.tok_s} tok/s at ${d.ctx} context`).join(", ")}. A CPU is a slow machine for this, but the ratios are the point.</p></div>
+
+## The KV cache: why decode doesn't start from scratch
+
+In attention (module 03), each new token needs the **keys and values of every earlier token**. Those don't change once they're computed, so engines save them: that's the <T k="kv-cache">KV cache</T>. Without it, every new token would recompute the whole conversation.
+
+Measured with the same script, generating 32 tokens:
+
+| context | with KV cache | without (recompute everything) |
+|---|---|---|
+{R.decode.filter((d) => d.cache).map((d, i) => `| ${d.ctx} tokens | ${d.tok_s} tok/s | ${R.decode.filter((x) => !x.cache)[i].tok_s} tok/s |`).join("\n")}
+
+The longer the context, the bigger the gap, because without a cache the work per token grows with the context.
+
+### How big it gets
+
+Per token, each attention layer stores one key and one value vector per KV head. For Qwen3-0.6B: 28 layers × 2 × 8 KV heads × 128 numbers × 2 bytes (BF16) = **{(R.kv.bytes_bf16_per_token / 1024).toFixed(0)} KiB per token**. We checked it against the real cache: the K tensor of each layer had shape [{R.kv.k_shape.join(", ")}] for 512 tokens, {R.kv.numbers.toLocaleString("en-US")} numbers in total, exactly the formula.
+
+At Qwen3-0.6B's full 40,960-token context that's about 4.7 GB, roughly **4× the size of the model's own weights** (1.2 GB). For long contexts and parallel users, the KV cache, not the weights, is what fills the GPU.
+
+<FigKV />
+
+This is why architectures fight over KV size:
+
+- **<T k="gqa">GQA</T>** cuts it by sharing K/V heads (Qwen3-Next: 16 query heads, only 2 KV heads).
+- **<T k="mla">MLA</T>** stores one compressed latent per token: DeepSeek-V3 needs 61 × (512 + 64) numbers per token. Plain multi-head attention with 128 full heads would need about 70× more.
+- **Sliding windows**: gpt-oss alternates full-attention layers with layers that only look at the last 128 tokens, so half its layers have a capped cache.
+- **Linear attention**: Qwen3.5, Ornith and Qwen3-Next keep a full KV cache in only 1 of every 4 layers.
+
+## Context length
+
+<T k="context">Context length</T> is how many tokens the model can attend to at once: prompt, history, tool outputs and its own answer together. `max_position_embeddings` in `config.json` is the trained limit (40,960 for Qwen3-0.6B, 262,144 for Qwen3.5-9B).
+
+Three things limit what you get in practice:
+
+1. **Training**: RoPE positions beyond what the model saw in training produce garbage. **YaRN** and similar methods rescale the rotations to stretch the window ([Peng et al., 2023](https://arxiv.org/abs/2309.00071)). Qwen documents enabling it with a `rope_scaling` block.
+2. **Memory**: the KV cache figure above.
+3. **Quality**: models get worse at using information buried deep in long contexts ("lost in the middle", [Liu et al., 2023](https://arxiv.org/abs/2307.03172)). Advertised context ≠ usable context.
+
+## KV cache quantization
+
+The cache can be stored in fewer bits, just like weights (module 07): vLLM has `--kv-cache-dtype fp8`, and llama.cpp has `--cache-type-k q8_0 --cache-type-v q8_0`. 8-bit halves the memory with usually small quality loss. 4-bit keys tend to hurt more. Measure it with the KLD method from module 07 before trusting it for agent work.
+
+## Serving many users: batching and paged attention
+
+- **Batching**: during decode, the GPU reads all the weights for each token anyway. Processing 32 users' next tokens in the same pass costs barely more than one user. Throughput goes up, latency per user stays roughly the same.
+- **Continuous batching**: new requests join the running batch at any step instead of waiting for the current batch to finish.
+- **PagedAttention** (vLLM, [Kwon et al., 2023](https://arxiv.org/abs/2309.06180)): the KV cache is stored in small fixed-size blocks, like memory pages in an operating system, so no memory is wasted on reserved-but-unused context. It also enables prefix caching: sharing the cache of a common system prompt between requests.
+- **FlashAttention** ([Dao et al., 2022](https://arxiv.org/abs/2205.14135)) computes attention in tiles that fit in fast on-chip memory, never materializing the full [tokens × tokens] score matrix.
+
+## Speculative decoding and MTP
+
+Decode wastes compute: the hardware could process many tokens per pass, but only gets one. **Speculative decoding** ([Leviathan et al., 2022](https://arxiv.org/abs/2211.17192)) uses a small fast draft model to guess the next few tokens. The big model then checks all the guesses in one parallel pass and keeps the ones it agrees with. The output follows exactly the same distribution as the big model alone, just faster when the guesses are good.
+
+**Multi-token prediction (MTP)** builds the draft into the model: DeepSeek-V3 has an extra prediction module (`num_nextn_predict_layers: 1` in its config) trained to predict the token after next, and engines can use it for speculative decoding ([DeepSeek-V3 report](https://arxiv.org/abs/2412.19437)).
+
+## Where to go deeper
+
+- [vLLM paper and docs](https://docs.vllm.ai/) for paged attention and serving settings.
+- Hugging Face, [KV cache strategies](https://huggingface.co/docs/transformers/main/en/kv_cache).
+- [How to make LLMs go fast](https://vgel.me/posts/faster-inference/) (Theia Vogel): a readable tour of every inference trick.

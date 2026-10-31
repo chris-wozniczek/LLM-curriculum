@@ -1,0 +1,53 @@
+---
+import Fig from "../Fig.astro";
+const files = import.meta.glob<any>("../../data/models/*.json", { eager: true });
+const ms = Object.values(files).map((f: any) => {
+  const d = f.default ?? f, c = d.config.text_config ?? d.config, L = c.num_hidden_layers, lt: string[] = c.layer_types ?? [];
+  const E = c.num_experts ?? c.n_routed_experts ?? c.num_local_experts, d0 = c.first_k_dense_replace ?? 0;
+  const att = c.kv_lora_rank ? `MLA (latent ${c.kv_lora_rank})` : (c.num_key_value_heads ?? c.num_attention_heads) === c.num_attention_heads ? "MHA" : `GQA ${c.num_attention_heads}q / ${c.num_key_value_heads}kv`;
+  const layers = Array.from({ length: L }, (_, i) => {
+    const t = lt[i] ?? (c.model_type === "qwen3_next" ? ((i + 1) % (c.full_attention_interval ?? 4) ? "linear_attention" : "full_attention") : "full_attention");
+    return { a: t.startsWith("linear") ? "lin" : t.startsWith("sliding") ? "sw" : "full", m: E && i >= d0 ? "moe" : "dense" };
+  });
+  return {
+    name: d.repo.split("/")[1].replace("-Instruct", "").replace("-EXL3-SAGE-1.13bpw", ""), layers,
+    rows: {
+      family: c.model_type, layers: L, hidden_size: c.hidden_size, attention: att, head_dim: c.head_dim ?? (c.qk_nope_head_dim ? `${c.qk_nope_head_dim}+${c.qk_rope_head_dim} rope` : c.hidden_size / c.num_attention_heads),
+      "attention layers": lt.length ? [...new Set(lt)].map((t) => `${lt.filter((x) => x === t).length} ${t.replace("_attention", "")}`).join(" · ") : c.model_type === "qwen3_next" ? `${L * 3 / 4} linear · ${L / 4} full` : `${L} full`,
+      "sliding window": c.sliding_window ?? "-", MLP: E ? `MoE ${E} experts, top-${c.num_experts_per_tok}` : `dense, ${c.intermediate_size}`,
+      "shared expert": c.n_shared_experts ?? (c.shared_expert_intermediate_size ? 1 : E ? 0 : "-"), "dense first layers": E ? d0 : "-",
+      vocab: c.vocab_size, "max context": c.max_position_embeddings, "rope theta": c.rope_theta ?? c.rope_parameters?.rope_theta ?? "-", "tied embeddings": c.tie_word_embeddings ? "yes" : "no",
+    },
+  };
+});
+const keys = Object.keys(ms[0].rows);
+---
+<Fig title="Two models side by side, straight from config.json" sub="pick A and B · differences are highlighted · strip = every layer">
+  <script type="application/json" id="ar-data" set:html={JSON.stringify(ms)} />
+  <div class="row"><span class="dim mono">A</span><div class="seg" id="ar-a">{ms.map((m, i) => <button data-i={i} class={m.name === "Qwen3-30B-A3B" ? "on" : ""}>{m.name}</button>)}</div></div>
+  <div class="row" style="margin-top:8px"><span class="dim mono">B</span><div class="seg" id="ar-b">{ms.map((m, i) => <button data-i={i} class={m.name === "DeepSeek-V3" ? "on" : ""}>{m.name}</button>)}</div></div>
+  <div id="ar-strip"></div>
+  <div class="scroll-x"><table class="tbl" id="ar-t"><thead><tr><th></th><th id="ar-ha"></th><th id="ar-hb"></th></tr></thead><tbody>{keys.map((k) => <tr data-k={k}><td>{k}</td><td></td><td></td></tr>)}</tbody></table></div>
+  <Fragment slot="cap">Every value is read at build time from the model's own <code>config.json</code> (Qwen3-Next's layer pattern comes from its <code>full_attention_interval</code>). Strip colours: attention type on top (green full, blue sliding window, violet linear), MLP type below (amber MoE, grey dense). Muse Spark is a community EXL3 pack; its config is shown as published.</Fragment>
+</Fig>
+<style>
+  #ar-strip { display: grid; gap: 10px; margin: 16px 0; }
+  .ar-s small { font: 600 11px/1 var(--mono); color: var(--ink-3); } .ar-s div { display: flex; gap: 1px; margin-top: 5px; }
+  .ar-s i { flex: 1; height: 12px; border-radius: 2px; } .ar-s i.m { height: 7px; margin-top: 1px; }
+  .full { background: var(--accent); } .sw { background: var(--blue); } .lin { background: var(--violet); } .moe { background: var(--amber); } .dense { background: rgba(255,255,255,.18); }
+  #ar-t td.diff { color: var(--amber); }
+</style>
+<script>
+  const M = JSON.parse(document.getElementById("ar-data")!.textContent!);
+  let A = M.findIndex((m: any) => m.name === "Qwen3-30B-A3B"), B = M.findIndex((m: any) => m.name === "DeepSeek-V3");
+  const fmt = (v: any) => (typeof v === "number" ? v.toLocaleString("en-US") : String(v));
+  function draw() {
+    const a = M[A], b = M[B];
+    document.getElementById("ar-ha")!.textContent = a.name; document.getElementById("ar-hb")!.textContent = b.name;
+    document.querySelectorAll<HTMLTableRowElement>("#ar-t tbody tr").forEach((tr) => { const k = tr.dataset.k!, d = fmt(a.rows[k]) !== fmt(b.rows[k]); tr.cells[1].textContent = fmt(a.rows[k]); tr.cells[2].textContent = fmt(b.rows[k]); tr.cells[1].className = tr.cells[2].className = d ? "diff" : ""; });
+    const strip = (m: any) => `<div class="ar-s"><small>${m.name} · ${m.layers.length} layers</small><div>${m.layers.map((l: any) => `<i class="${l.a}"></i>`).join("")}</div><div>${m.layers.map((l: any) => `<i class="m ${l.m}"></i>`).join("")}</div></div>`;
+    document.getElementById("ar-strip")!.innerHTML = strip(a) + strip(b);
+  }
+  const seg = (id: string, f: (i: number) => void) => document.querySelectorAll<HTMLButtonElement>(`#${id} button`).forEach((x) => x.addEventListener("click", () => { document.querySelectorAll(`#${id} button`).forEach((y) => y.classList.remove("on")); x.classList.add("on"); f(+x.dataset.i!); draw(); }));
+  seg("ar-a", (i) => (A = i)); seg("ar-b", (i) => (B = i)); draw();
+</script>

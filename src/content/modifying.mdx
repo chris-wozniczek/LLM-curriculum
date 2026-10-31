@@ -1,0 +1,90 @@
+---
+models: ["Qwen3-0.6B (abliterated here, measured)", "mergekit methods"]
+---
+import T from "../components/T.astro";
+import R from "../data/abliterate.json";
+
+## Changing a model without (much) training
+
+Fine-tuning (module 11) changes weights by training. A whole community toolbox changes them with **arithmetic** instead: averaging models, subtracting directions, deleting layers or experts. It's cheap (minutes on a CPU), and it's where many of the "uncensored", "merged" and "pruned" repos on Hugging Face come from.
+
+## Merges
+
+A merge combines several fine-tunes of **the same base model** into one. They need identical architecture and tensor shapes, and in practice a shared base, so their weights are still "compatible".
+
+| method | idea |
+|---|---|
+| linear / model soup | weighted average of the weights ([Wortsman et al., 2022](https://arxiv.org/abs/2203.05482)) |
+| SLERP | interpolate two models along a sphere instead of a straight line, which keeps the weight norms sensible |
+| task arithmetic | take each fine-tune's difference from the base (its "task vector") and add them up |
+| TIES | task arithmetic, but keep only the largest changes and resolve sign conflicts between models ([Yadav et al., 2023](https://arxiv.org/abs/2306.01708)) |
+| DARE | randomly drop most of each task vector and rescale the rest before merging ([Yu et al., 2023](https://arxiv.org/abs/2311.03099)) |
+
+The standard tool is [mergekit](https://github.com/arcee-ai/mergekit) ([paper](https://arxiv.org/abs/2403.13257)), and its YAML config is the **merge recipe** from module 13:
+
+```yaml
+merge_method: ties
+base_model: Qwen/Qwen3-8B-Base
+models:
+  - model: someone/qwen3-8b-coder      # illustrative names
+    parameters: { weight: 0.6, density: 0.5 }
+  - model: someone/qwen3-8b-writer
+    parameters: { weight: 0.4, density: 0.5 }
+dtype: bfloat16
+```
+
+Labs also merge their own checkpoints, for example averaging several RL runs. It's a regular tool, not just a hobbyist trick.
+
+## Abliteration
+
+[Arditi et al., 2024](https://arxiv.org/abs/2406.11717) found that in many chat models, refusing is controlled by **one direction** in the residual stream (module 03). Find that direction, remove it from the weights, and the model mostly stops refusing. The rest of its behaviour changes little. That's **abliteration** (ablation + obliteration):
+
+1. Run two sets of prompts through the model: ones it refuses and similar ones it answers.
+2. At one layer, take the average hidden state of each set at the last prompt token. The difference between the two averages is the **refusal direction** `r` (normalized to length 1).
+3. Remove `r` from every matrix that writes into the residual stream (embeddings, every `o_proj` and `down_proj`): `W ← W − r rᵀ W`. Now no layer can write anything along `r`.
+
+That's plain linear algebra: no training, no gradients. Here it is on Qwen3-0.6B, measured with `labs/abliterate.py` (deliberately mild prompts: insults, fake doctor's notes, sneaking into a cinema):
+
+<div class="stats">
+  <div class="stat"><small>refusals before</small><b>{Math.round(R.baseline.refusal_rate * 100)}%</b></div>
+  <div class="stat"><small>refusals after</small><b>{Math.round(R.abliterated.refusal_rate * 100)}%</b></div>
+  <div class="stat"><small>direction from layer</small><b>{R.best_layer}</b></div>
+  <div class="stat"><small>KLD on harmless prompts</small><b>{R.abliterated.harmless_next_token_kld}</b></div>
+</div>
+
+Refusals measured on {R.test_prompts} held-out prompts, with the direction computed from {R.train_pairs} other pairs. Refusal = the reply contains a refusal phrase ("I can't", "It's important to…"); a crude check, as in the paper. The KLD is for the first answer token on harmless prompts, compared with the original model (module 07).
+
+**The layer choice is everything.** Each candidate layer's direction was tried with a temporary hook before touching the weights:
+
+<div class="scroll-x"><table class="tbl">
+  <thead><tr><th>direction from layer</th><th class="r">refusal rate</th><th class="r">KLD on harmless prompts</th></tr></thead>
+  <tbody>{R.candidates.map((c) => <tr><td>{c.layer}</td><td class="r">{Math.round(c.refusal_rate * 100)}%</td><td class="r">{c.harmless_kld}</td></tr>)}</tbody>
+</table></div>
+
+Early layers barely change refusals. Layer 13 also removes refusals but wrecks the model (KLD 11: its answers become unrelated babble). Layers 17-21 remove refusals while staying close to the original. The script picks the lowest refusal rate among layers with harmless-prompt KLD under 0.5.
+
+<div class="scroll-x"><table class="tbl">
+  <thead><tr><th>prompt</th><th>before</th><th>after</th></tr></thead>
+  <tbody>{R.examples.slice(0, 5).map((e) => <tr><td>{e.prompt}</td><td>{e.before}</td><td>{e.after}</td></tr>)}</tbody>
+</table></div>
+
+What abliteration does **not** do: it doesn't add knowledge or skills. It often makes models slightly worse elsewhere (here: {Math.round(R.abliterated.harmless_top1_agree * 100)}% top-1 agreement with the original on harmless prompts), and it removes safety behaviour that exists for good reasons. Community abliterations usually follow up with a short fine-tune ("healing") to recover quality. Tools: [FailSpy's abliterator](https://github.com/FailSpy/abliterator), [Heretic](https://github.com/p-e-w/heretic), and the original paper's code.
+
+## Steering
+
+The same idea without editing weights: **add** a direction at inference time instead of removing one. Take the difference between activations for "talk about weddings" and neutral text, add a multiple of it to the residual stream during generation, and the model drifts toward weddings ([Turner et al., 2023](https://arxiv.org/abs/2308.10248)). It's used for tone, persona, or honesty experiments, and the strength is a dial you turn at runtime.
+
+## Pruning
+
+- **Layer pruning**: deeper layers are often surprisingly redundant. [Gromov et al., 2024](https://arxiv.org/abs/2403.17887) removed large fractions of later layers from Llama-2-70B with little loss on knowledge benchmarks, after a small healing fine-tune.
+- **Expert pruning** (module 08): drop rarely used or low-impact MoE experts, as in REAP. The model gets smaller in total size, not faster per token.
+- Both remove capabilities that your test set didn't cover. Evaluate on your own tasks (module 14).
+
+## Upscaling and frankenmerges
+
+The opposite: make a model **bigger** by stacking copies of its layers. SOLAR 10.7B did this properly ("depth up-scaling": two copies of a 32-layer model, overlapping layers removed, then continued pretraining; [Kim et al., 2023](https://arxiv.org/abs/2312.15166)). Community **frankenmerges** do it with mergekit's `passthrough` method, stacking layer ranges from one or two models without retraining. Some work surprisingly well, many just get slower. Measure before believing.
+
+## Where to go deeper
+
+- Maxime Labonne, [Uncensor any LLM with abliteration](https://huggingface.co/blog/mlabonne/abliteration) and [Merge LLMs with mergekit](https://huggingface.co/blog/mlabonne/merge-models).
+- [Representation Engineering](https://arxiv.org/abs/2310.01405) (Zou et al., 2023): reading and steering concepts in activations.

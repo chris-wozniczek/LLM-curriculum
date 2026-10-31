@@ -1,0 +1,108 @@
+---
+models: ["Qwen3-0.6B (LoRA shapes)", "Otter-9B plan (case study)"]
+---
+import T from "../components/T.astro";
+import FigLora from "../components/figs/FigLora.astro";
+
+## From base model to assistant
+
+A base model from pretraining (module 10) only continues text. Ask it a question and it may answer, or write five more questions. **Post-training** is everything after pretraining that turns it into a useful assistant: following instructions, using the chat template, calling tools, reasoning, refusing harmful requests, and being good at the tasks you care about.
+
+It's much cheaper than pretraining (thousands to millions of examples instead of trillions of tokens), and it's where small teams can actually compete. The usual stages:
+
+1. **SFT** (supervised fine-tuning): learn from good example answers.
+2. **Preference tuning** (RLHF/PPO, DPO): learn which of two answers people prefer.
+3. **RL with verifiable rewards**: practise on tasks where a program checks the result.
+4. **Distillation**: learn from a stronger teacher model.
+
+## SFT: imitation
+
+SFT is the same next-token training as pretraining, but on curated conversations rendered with the chat template (module 02). One key difference: the loss is usually computed **only on the assistant's tokens**. The model shouldn't learn to write the user's messages, only the answers.
+
+```python
+from trl import SFTConfig, SFTTrainer
+trainer = SFTTrainer(
+    model="Qwen/Qwen3-0.6B",
+    train_dataset=dataset,                      # rows of {"messages": [...]}
+    args=SFTConfig(assistant_only_loss=True, learning_rate=2e-5, num_train_epochs=2),
+)
+trainer.train()
+```
+
+Data matters most. A few thousand excellent, diverse examples beat a million mediocre ones ([LIMA](https://arxiv.org/abs/2305.11206)). For agents, an SFT example is a whole session: system prompt, tool definitions, tool calls, tool results, final answer.
+
+## Full fine-tune vs LoRA vs QLoRA
+
+How the weights get updated is a separate choice from what you train on:
+
+- **Full fine-tune**: update every weight. Needs about 16 bytes per parameter for weights, gradients and Adam states (module 01).
+- **<T k="lora">LoRA</T>** ([Hu et al., 2021](https://arxiv.org/abs/2106.09685)): freeze the original weights and learn a low-rank update `W + B·A` for selected matrices, with A [r × in] and B [out × r]. Only A and B get gradients and optimizer states.
+- **QLoRA** ([Dettmers et al., 2023](https://arxiv.org/abs/2305.14314)): LoRA on top of a frozen base stored in 4-bit NF4. It saves the most memory but adds quantization error to the base during training.
+
+<FigLora />
+
+Practical notes:
+
+- **Rank** (`r`) is the adapter's capacity. 16-64 is common. **`lora_alpha`** scales the update and is often set to r or 2r.
+- **Target all linear layers**, not just attention. Thinking Machines found LoRA matches full fine-tuning in most post-training settings when applied to all layers with a higher learning rate (roughly 10×), and that it does especially well for RL ([LoRA Without Regret](https://thinkingmachines.ai/blog/lora/)).
+- **Merging**: after training, `W + B·A` can be added into the base weights, giving a normal model with no extra inference cost. Or keep the adapter separate (a few MB) and swap it at runtime.
+- **Catastrophic forgetting**: fine-tuning on a narrow dataset can erase general skills. Mixing in some general "replay" data and LoRA's smaller updates both help ([Biderman et al., 2024](https://arxiv.org/abs/2405.09673)).
+
+## Preference tuning: RLHF, PPO, DPO
+
+Some qualities are easier to judge than to demonstrate: helpfulness, tone, safety. **RLHF** ([InstructGPT](https://arxiv.org/abs/2203.02155)):
+
+1. Collect pairs of answers to the same prompt and have people pick the better one.
+2. Train a **reward model** to predict those choices.
+3. Optimize the policy (the LLM) against the reward model with **PPO** ([Schulman et al., 2017](https://arxiv.org/abs/1707.06347)), with a KL penalty that keeps it close to the SFT model so it doesn't learn to game the reward.
+
+**DPO** ([Rafailov et al., 2023](https://arxiv.org/abs/2305.18290)) skips the reward model and the RL loop: a simple loss directly increases the probability of the preferred answer relative to the rejected one, compared with a frozen reference model. Much easier to run, so it became the default for open models.
+
+## RL with verifiable rewards
+
+For math, code and agent tasks you don't need human judges: a program can check the answer. Run the tests, compare the number, check whether the file exists. This is **RLVR** (named in [Tülu 3](https://arxiv.org/abs/2411.15124)), and it's what produced the reasoning models.
+
+**GRPO** ([DeepSeekMath](https://arxiv.org/abs/2402.03300)) is the most used algorithm:
+
+1. For one prompt, sample a group of answers (say 8).
+2. Score each with the verifier.
+3. Each answer's advantage is its score relative to the group's average. Better-than-average answers get reinforced, worse ones suppressed.
+4. No separate value model is needed (unlike PPO), which saves a lot of memory.
+
+[DeepSeek-R1](https://arxiv.org/abs/2501.12948) showed that RL like this, with only correctness rewards, makes models learn to write long chains of thought, check their work and backtrack. Those are the **reasoning traces** you see in `<think>` blocks.
+
+What makes RL hard in practice isn't the algorithm, it's the **environments**: tasks at the right difficulty (too easy or too hard gives no learning signal), verifiers that can't be gamed (reward hacking: deleting the failing tests counts as "all tests pass"), and sandboxes that are fast enough to run thousands of attempts.
+
+## Distillation
+
+A strong **teacher** model teaches a smaller **student**:
+
+- **Sequence-level** (the cheap, common way): the teacher writes answers or full agent sessions, you keep the good ones, and you SFT the student on them. DeepSeek-R1's small "distill" models were made this way from R1's reasoning traces.
+- **Logit-level** ([Hinton et al., 2015](https://arxiv.org/abs/1503.02531)): the student learns to match the teacher's whole probability distribution for each token, which carries much more information than the single sampled token. Requires the same tokenizer.
+- **On-policy distillation** ([GKD](https://arxiv.org/abs/2306.13649)): the student writes its own answers and the teacher scores every token, so the student learns from its own mistakes. Needs access to the teacher's logprobs on text the student wrote.
+
+## Case study: the Otter-9B plan
+
+Otter is your project to post-train a 9B model for agentic coding. Its plan (from the Otter repo's `TRAINING_PLAN_FULL.md` and design docs) maps directly onto this module:
+
+| stage | Otter's choice | why |
+|---|---|---|
+| base model | Ornith-1.5-9B (Qwen3.5 architecture) | already strong at agent tasks; same tokenizer as a big teacher |
+| data | teacher agent trajectories, kept only if verified successful (rejection sampling), plus 20-30% general replay data | distillation via SFT; replay against forgetting |
+| method | BF16 LoRA, not QLoRA | Unsloth advises against 4-bit QLoRA for Qwen3.5-family models; ~22 GB for 9B |
+| later | on-policy distillation, then GRPO-family RL in verified environments | the published consensus recipe the plan summarizes: SFT → on-policy distillation → RL → merge |
+| evaluation | Terminal-Bench 2.1 baseline before and after | measure the gain, not the vibe (module 14) |
+
+## Tools
+
+- [TRL](https://huggingface.co/docs/trl) (Hugging Face): SFT, DPO, GRPO, GKD trainers.
+- [Unsloth](https://docs.unsloth.ai/): fast, memory-efficient LoRA/QLoRA on one GPU.
+- [Axolotl](https://docs.axolotl.ai/), [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory): config-file driven fine-tuning (the training recipes from module 13).
+- [mlx-lm](https://github.com/ml-explore/mlx-lm): LoRA fine-tuning on a Mac.
+- [verl](https://github.com/volcengine/verl), [prime-rl](https://github.com/PrimeIntellect-ai/prime-rl), [SkyRL](https://github.com/NovaSky-AI/SkyRL): RL at scale.
+
+## Where to go deeper
+
+- Nathan Lambert, [RLHF Book](https://rlhfbook.com/).
+- Hugging Face, [LLM course: fine-tuning chapters](https://huggingface.co/learn/llm-course/).
+- [Tülu 3 report](https://arxiv.org/abs/2411.15124): a complete open post-training recipe with data and code.

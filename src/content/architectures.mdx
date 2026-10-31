@@ -1,0 +1,56 @@
+---
+models: ["Qwen3-0.6B", "Qwen3-30B-A3B", "Qwen3-Next-80B-A3B", "Qwen3.5-9B", "Ornith-1.5-9B", "DeepSeek-V3", "Kimi K2", "gpt-oss-20b", "Muse Spark Open (EXL3)"]
+---
+import T from "../components/T.astro";
+import FigArch from "../components/figs/FigArch.astro";
+
+## They're all the same skeleton
+
+Every model on this page is a decoder-only transformer from module 03: embeddings → N layers of (norm, attention, norm, MLP) with residual connections → final norm → lm_head. The differences sit in four places:
+
+1. **Attention type**: MHA, <T k="gqa">GQA</T>, <T k="mla">MLA</T>, sliding window, or linear attention (module 03).
+2. **MLP type**: dense or <T k="moe">MoE</T>, how many experts, how many active, shared experts (module 08).
+3. **Size**: layers × hidden size × vocabulary.
+4. **Position and context**: RoPE settings and the trained context length (module 04).
+
+So "how is DeepSeek different from Qwen" really means: which choice did each make at those four points? You can read all of it from `config.json`.
+
+<FigArch />
+
+## The families, one by one
+
+**Qwen3 (dense, e.g. 0.6B).** The baseline: GQA attention with QK-norm (`q_norm`/`k_norm`), SwiGLU MLP, RMSNorm, RoPE with theta 1,000,000. Small sizes tie the embeddings. Nothing exotic, which makes it the best model to learn on.
+
+**Qwen3-30B-A3B (MoE).** Same attention style (32 query heads, 4 KV heads), but every MLP becomes 128 small experts (768 wide each), 8 picked per token, no shared expert. 48 layers, all MoE.
+
+**Qwen3-Next-80B-A3B (hybrid + sparse MoE).** Two changes at once: 3 of every 4 layers use Gated DeltaNet linear attention, and the MoE goes very sparse with 512 experts, 10 active, plus one shared expert. Full-attention layers have only 2 KV heads. Built for cheap long context (262,144 tokens).
+
+**Qwen3.5-9B and Ornith-1.5-9B (hybrid dense).** The Qwen3-Next attention pattern (24 linear + 8 full layers) in a dense 9B model with a 248k vocabulary. Ornith is built on this architecture: its config differs only in details like `tie_word_embeddings`, and the tensor lists are identical (module 05). Ornith's differences come from training, not architecture.
+
+**DeepSeek-V3 (MLA + fine-grained MoE).** 61 layers, hidden size 7,168. MLA attention: keys and values compressed into a 512-number latent per token, which makes its KV cache tiny for its size (module 04). The first 3 layers are dense, the remaining 58 are MoE with 256 routed experts (8 active) plus 1 shared expert. Adds an MTP module for speculative decoding and was trained in FP8 ([report](https://arxiv.org/abs/2412.19437)).
+
+**Kimi K2 (DeepSeek-V3 design, scaled).** Same `deepseek_v3`-style blueprint: MLA, same hidden size, same 61 layers, 1 shared expert. The differences are visible in the config: 384 instead of 256 experts, 64 instead of 128 attention heads, and only the first layer dense. Moonshot describes these choices in their [Kimi K2 report](https://arxiv.org/abs/2507.20534), along with its MuonClip optimizer.
+
+**gpt-oss-20b (alternating attention, MXFP4 MoE).** 24 layers that alternate between full attention and a 128-token sliding window, GQA with 64 query and 8 KV heads of only 64 dims, 32 experts with 4 active. Its experts ship already quantized to MXFP4 (module 06), which is why a 21B model is only 13.8 GB ([model card](https://arxiv.org/abs/2508.10925)).
+
+**Muse Spark Open (community EXL3 pack).** The config in ViC305's repo describes 62 layers with 46 sliding-window (2,048) and 16 full-attention layers, 256 experts with 8 active, and a 1M-token max context. The weights are an EXL3 SAGE quant at ~1.13 bpw (module 07).
+
+## Patterns worth noticing
+
+- **KV cache is the main design pressure.** GQA with few KV heads, MLA, sliding windows and linear attention all exist to shrink it.
+- **MoE went fine-grained.** From 8 big experts (Mixtral) to 128-512 small ones, often with a shared expert.
+- **Early dense layers.** DeepSeek and Kimi keep their first layers dense, because routing on raw token embeddings works poorly.
+- **Vocabularies grew** from 32k (Llama 2) to 128-262k, which helps multilingual text and code (module 02).
+- **Same architecture, different model.** Qwen3.5-9B and Ornith-1.5-9B prove that architecture is only half the story. Data and post-training do the rest.
+
+## Do it yourself on any new model
+
+1. Open `config.json`: find `model_type`, `num_hidden_layers`, `hidden_size`, the attention fields and the expert fields.
+2. Open `model.safetensors.index.json`: the tensor names show the actual blocks (`mlp.experts.N`, `self_attn.kv_a_proj_with_mqa`, `linear_attn`).
+3. Look up the modeling file in `transformers/models/<model_type>/` to see the forward pass in code.
+4. Compare with a family you already know, field by field, like the figure above.
+
+## Where to go deeper
+
+- Sebastian Raschka, [The Big LLM Architecture Comparison](https://magazine.sebastianraschka.com/p/the-big-llm-architecture-comparison).
+- [Qwen3 technical report](https://arxiv.org/abs/2505.09388), [DeepSeek-V3 report](https://arxiv.org/abs/2412.19437), [Kimi K2 report](https://arxiv.org/abs/2507.20534), [gpt-oss model card](https://arxiv.org/abs/2508.10925).

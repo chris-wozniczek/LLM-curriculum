@@ -20,6 +20,7 @@ npm run check    # astro check (types)
 - `src/components/figs/` – interactive figures
 - `src/data/models/*.json` – `config.json` + tensor-name patterns pulled from Hugging Face
 - `src/data/quant-fidelity.json` – measured results from `labs/quant_fidelity.py`
+- `src/data/qwen3-inside.json`, `tokenizers.json`, `olmoe-router.json`, `tiny-pretrain.json`, `abliterate.json` – measured by `labs/inside_qwen.py`, `tokenizers_compare.py`, `moe_router.py`, `tiny_pretrain.py`, `abliterate.py`
 
 ## Labs
 

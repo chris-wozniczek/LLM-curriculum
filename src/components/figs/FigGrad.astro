@@ -1,0 +1,50 @@
+---
+import Fig from "../Fig.astro";
+---
+<Fig title="Training in miniature: gradient descent on two parameters" sub="fit y = w·x + b to 24 points · runs live in your browser">
+  <div class="row">
+    <div class="seg" id="gd-lr"><button data-lr="0.01">lr 0.01</button><button data-lr="0.1" class="on">lr 0.1</button><button data-lr="0.5">lr 0.5</button><button data-lr="1.05">lr 1.05</button></div>
+    <div class="seg" id="gd-act"><button data-a="step">1 step</button><button data-a="run">run 50</button><button data-a="reset">reset</button></div>
+  </div>
+  <div class="gd-grid">
+    <svg id="gd-plot" viewBox="0 0 300 200"></svg>
+    <svg id="gd-loss" viewBox="0 0 300 200"></svg>
+  </div>
+  <div class="stats" id="gd-out"></div>
+  <Fragment slot="cap">The 24 points are generated from y = 0.8·x − 0.3 plus fixed noise, so this is a synthetic example, but every number shown is computed live. Each step: predict, measure the loss (mean squared error), compute the gradient of the loss with respect to w and b, move both a little against the gradient. Too small a learning rate crawls; above 1 this problem diverges. A real LLM does exactly this with billions of parameters and cross-entropy loss instead of squared error.</Fragment>
+</Fig>
+<style>
+  .gd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+  .gd-grid svg { width: 100%; height: auto; background: rgba(255,255,255,.025); border: 1px solid var(--line); border-radius: 12px; }
+  @media (max-width: 640px) { .gd-grid { grid-template-columns: 1fr; } }
+</style>
+<script>
+  const N = 24, xs: number[] = [], ys: number[] = [];
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) - 0.5;
+  for (let i = 0; i < N; i++) { const x = -1 + (2 * i) / (N - 1); xs.push(x); ys.push(0.8 * x - 0.3 + rnd() * 0.5); }
+  let w = -0.6, b = 0.7, lr = 0.1, step = 0, hist: number[] = [], timer: number | undefined;
+  const loss = () => xs.reduce((s, x, i) => s + (w * x + b - ys[i]) ** 2, 0) / N;
+  const grad = () => { let gw = 0, gb = 0; xs.forEach((x, i) => { const e = w * x + b - ys[i]; gw += (2 * e * x) / N; gb += (2 * e) / N; }); return [gw, gb]; };
+  const X = (x: number) => 20 + ((x + 1.1) / 2.2) * 270, Y = (y: number) => 180 - ((y + 1.6) / 3) * 165;
+  function draw(g = grad()) {
+    let s = `<line x1="20" y1="${Y(0)}" x2="290" y2="${Y(0)}" stroke="rgba(255,255,255,.08)"/>`;
+    xs.forEach((x, i) => (s += `<circle cx="${X(x)}" cy="${Y(ys[i])}" r="3" fill="var(--blue)" opacity=".85"/>`));
+    s += `<line x1="${X(-1.1)}" y1="${Y(w * -1.1 + b)}" x2="${X(1.1)}" y2="${Y(w * 1.1 + b)}" stroke="var(--accent)" stroke-width="2.5"/>`;
+    document.getElementById("gd-plot")!.innerHTML = s + `<text x="24" y="16" fill="rgba(238,241,245,.5)" font-size="10" font-family="monospace">data and current line</text>`;
+    const L = hist.length ? hist : [loss()], mx = Math.max(...L, 0.05);
+    const pts = L.map((v, i) => `${20 + (i / Math.max(1, L.length - 1)) * 270},${185 - Math.min(1, Math.log10(1 + v * 9 / mx)) * 160}`).join(" ");
+    document.getElementById("gd-loss")!.innerHTML = `<polyline points="${pts}" fill="none" stroke="var(--led)" stroke-width="2"/><text x="24" y="16" fill="rgba(238,241,245,.5)" font-size="10" font-family="monospace">loss per step (log)</text>`;
+    const st = (k: string, v: string) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`;
+    const l = loss();
+    document.getElementById("gd-out")!.innerHTML = st("step", String(step)) + st("w", isFinite(w) ? w.toFixed(3) : "∞") + st("b", isFinite(b) ? b.toFixed(3) : "∞") + st("loss", isFinite(l) ? l.toFixed(4) : "diverged") + st("gradient", isFinite(g[0]) ? `${g[0].toFixed(2)}, ${g[1].toFixed(2)}` : "-");
+  }
+  function one() { if (!isFinite(loss()) || loss() > 1e6) return; const g = grad(); w -= lr * g[0]; b -= lr * g[1]; step++; hist.push(loss()); draw(); }
+  document.querySelectorAll<HTMLButtonElement>("#gd-lr button").forEach((x) => x.addEventListener("click", () => { document.querySelectorAll("#gd-lr button").forEach((y) => y.classList.remove("on")); x.classList.add("on"); lr = +x.dataset.lr!; }));
+  document.querySelectorAll<HTMLButtonElement>("#gd-act button").forEach((x) => x.addEventListener("click", () => {
+    clearInterval(timer);
+    if (x.dataset.a === "step") one();
+    if (x.dataset.a === "run") { let k = 0; timer = window.setInterval(() => { one(); if (++k >= 50) clearInterval(timer); }, 40); }
+    if (x.dataset.a === "reset") { w = -0.6; b = 0.7; step = 0; hist = []; draw(); }
+  }));
+  draw();
+</script>

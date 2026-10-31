@@ -1,0 +1,20 @@
+---
+import Fig from "../Fig.astro";
+---
+<Fig title="LoRA: how many parameters you actually train" sub="real Qwen3-0.6B matrix shapes · 28 layers · 596M parameters">
+  <div class="row"><div class="seg" id="lo-r">{[4, 8, 16, 32, 64, 128].map((r) => <button data-r={r} class={r === 16 ? "on" : ""}>rank {r}</button>)}</div></div>
+  <div class="row" style="margin-top:10px"><div class="seg" id="lo-t"><button data-t="attn">attention only (q,k,v,o)</button><button data-t="all" class="on">attention + MLP (all linear)</button></div></div>
+  <div class="stats" id="lo-out"></div>
+  <Fragment slot="cap">LoRA adds two small matrices per adapted weight: A [r × in] and B [out × r], so r × (in + out) parameters. Shapes from the real tensor list: q_proj 1024→2048, k/v_proj 1024→1024, o_proj 2048→1024, gate/up_proj 1024→3072, down_proj 3072→1024. "Full fine-tune memory" uses the ~16 bytes per parameter rule from module 01 (BF16 weights + gradients + FP32 master + Adam states), activations not included.</Fragment>
+</Fig>
+<script>
+  const S = { attn: [[1024, 2048], [1024, 1024], [1024, 1024], [2048, 1024]], mlp: [[1024, 3072], [1024, 3072], [3072, 1024]] } as Record<string, number[][]>;
+  let r = 16, t = "all";
+  function draw() {
+    const mats = t === "all" ? [...S.attn, ...S.mlp] : S.attn, n = 28 * mats.reduce((s, [i, o]) => s + r * (i + o), 0), tot = 596_049_920;
+    const st = (k: string, v: string) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`;
+    document.getElementById("lo-out")!.innerHTML = st("trainable params", (n / 1e6).toFixed(2) + "M") + st("share of model", ((100 * n) / tot).toFixed(2) + "%") + st("adapter file (BF16)", ((n * 2) / 1e6).toFixed(1) + " MB") + st("full fine-tune memory", ((tot * 16) / 1e9).toFixed(1) + " GB");
+  }
+  const seg = (id: string, f: (b: HTMLButtonElement) => void) => document.querySelectorAll<HTMLButtonElement>(`#${id} button`).forEach((b) => b.addEventListener("click", () => { document.querySelectorAll(`#${id} button`).forEach((y) => y.classList.remove("on")); b.classList.add("on"); f(b); draw(); }));
+  seg("lo-r", (b) => (r = +b.dataset.r!)); seg("lo-t", (b) => (t = b.dataset.t!)); draw();
+</script>

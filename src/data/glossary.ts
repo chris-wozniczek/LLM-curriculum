@@ -55,6 +55,11 @@ export const glossary: Term[] = [
   { k: "abliteration", t: "Abliteration", d: "Removing a behaviour (usually refusals) by finding the direction in activation space linked to it and projecting it out of the weights. No training needed.", m: "modifying" },
   { k: "recipe", t: "Recipe", d: "The exact reproducible settings used to make or run a model: a quant config, a merge YAML, a training config or a serving command.", m: "recipes" },
   { k: "calib-free", t: "Data-free quantization", d: "Quantization that needs no calibration data, like RTN, plain FP8 casting or MLX's default quantize.", m: "quantization" },
+  { k: "bpe", t: "BPE (byte-pair encoding)", d: "The usual way to build a tokenizer vocabulary: start from bytes and keep merging the most frequent neighbouring pair into a new token until the vocabulary is big enough.", m: "tokens" },
+  { k: "special-token", t: "Special token", d: "A token with a fixed role that ordinary text never produces: begin of text, end of turn, start of the assistant's reply, tool-call markers.", m: "tokens" },
+  { k: "chat-template", t: "Chat template", d: "A small Jinja program shipped with the tokenizer that turns a list of chat messages into the exact token stream the model was trained on.", m: "tokens" },
+  { k: "gradient", t: "Gradient", d: "For every parameter, how much the loss would change if that parameter went up a little. Training moves each parameter a small step against its gradient.", m: "foundations" },
+  { k: "loss", t: "Loss", d: "One number saying how wrong the model is. For LLMs: cross-entropy, -log(probability the model gave the real next token).", m: "foundations" },
 ];
 
 export const terms = Object.fromEntries(glossary.map((g) => [g.k, g]));

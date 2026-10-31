@@ -1,0 +1,121 @@
+---
+models: ["Qwen/Qwen3-0.6B (measured: attention, logit lens, sampling)"]
+---
+import T from "../components/T.astro";
+import FigAttn from "../components/figs/FigAttn.astro";
+import FigLens from "../components/figs/FigLens.astro";
+import FigSample from "../components/figs/FigSample.astro";
+
+## The whole model in one picture
+
+Every modern LLM is a stack of identical **decoder layers** (blocks) between an input table and an output table ([Vaswani et al., 2017](https://arxiv.org/abs/1706.03762) introduced the transformer; today's LLMs keep only its decoder half). Qwen3-0.6B, read straight from its tensor list (module 05):
+
+```text
+token ids
+  → embed_tokens            [151936, 1024]   id → vector of 1024 numbers
+  → 28 × decoder layer:
+        x = x + Attention(RMSNorm(x))      q/k/v/o_proj, q_norm, k_norm
+        x = x + MLP(RMSNorm(x))            gate/up/down_proj
+  → final norm              [1024]
+  → lm_head                 [151936, 1024]   vector → one logit per token
+  → softmax → probabilities → pick the next token
+```
+
+That's the entire forward pass. The rest of this module goes through each line.
+
+## The residual stream
+
+The `x = x + ...` lines are the key idea. Each token's vector `x` flows down the stack, and every attention and MLP block only **adds** a correction to it. It never replaces it. This running vector is called the **residual stream**, and its width is <T k="hidden-size">hidden_size</T>.
+
+Measured in Qwen3-0.6B: the average length (norm) of a token's vector starts at 0.86 after the embedding and grows to about 1,029 before the final norm, because every layer adds more. That's why each block normalizes its input first.
+
+## RMSNorm
+
+Before each block, the vector is rescaled to a standard size: divide by its root-mean-square, then multiply by a learned per-channel weight (the `input_layernorm.weight` [1024] tensors). That's **RMSNorm** ([Zhang & Sennrich, 2019](https://arxiv.org/abs/1910.07467)), a cheaper version of LayerNorm with no mean subtraction. Putting the norm *before* each block ("pre-norm") is what lets 60-100 layer stacks train stably.
+
+## Attention: tokens looking at each other
+
+Attention is the only place where tokens exchange information. For every token, three vectors are computed from its hidden state:
+
+- **Query (Q)**: what am I looking for?
+- **Key (K)**: what do I contain?
+- **Value (V)**: what will I hand over if someone picks me?
+
+Each token compares its query with the keys of all earlier tokens (a dot product per pair), softmaxes those scores into weights that sum to 1, and takes the weighted sum of the values. In code, for one head:
+
+```python
+scores = (q @ k.T) / head_dim**0.5            # [tokens, tokens]
+scores = scores.masked_fill(future, -inf)     # causal mask: no peeking ahead
+w = scores.softmax(-1)                        # each row sums to 1
+out = w @ v                                   # mix of earlier tokens' values
+```
+
+This happens in parallel in several **heads**, each with its own small Q/K/V (Qwen3-0.6B: 16 heads of 128 numbers), and `o_proj` mixes the heads back into the residual stream. Here are the real weights `w` for one sentence:
+
+<FigAttn />
+
+Two things you can see in the figure:
+
+- **The causal mask**: the upper-right triangle is empty, because a token can only look back.
+- **Attention sinks**: many heads put most of their weight on the very first token. It works as a "nowhere to look" parking spot ([Xiao et al., 2023](https://arxiv.org/abs/2309.17453)).
+
+### MHA, MQA, GQA, MLA
+
+Keys and values have to be stored for every past token (the <T k="kv-cache">KV cache</T>, module 04), so architectures differ mainly in how many K/V heads they keep:
+
+| variant | K/V heads | example |
+|---|---|---|
+| MHA (multi-head) | one per query head | original transformer, GPT-2 |
+| MQA (multi-query) | 1 shared by all ([Shazeer, 2019](https://arxiv.org/abs/1911.02150)) | PaLM, Falcon |
+| <T k="gqa">GQA</T> (grouped-query) | a few, each shared by a group ([Ainslie et al., 2023](https://arxiv.org/abs/2305.13245)) | Qwen3-0.6B: 16 query heads, 8 KV heads, so pairs share. Llama 3, gpt-oss |
+| <T k="mla">MLA</T> (multi-head latent) | K and V compressed into one small latent vector per token ([DeepSeek-V2](https://arxiv.org/abs/2405.04434)) | DeepSeek-V3, Kimi K2: `kv_lora_rank` = 512 |
+
+You can read GQA right off the tensor shapes: Qwen3's `q_proj` is [2048, 1024] (16 × 128) but `k_proj` and `v_proj` are [1024, 1024] (8 × 128). Qwen3 also has `q_norm` and `k_norm` [128] tensors: an extra RMSNorm on queries and keys that keeps attention scores from blowing up.
+
+### RoPE: where position comes from
+
+Attention by itself doesn't know token order. **RoPE** (rotary position embedding, [Su et al., 2021](https://arxiv.org/abs/2104.09864)) rotates each pair of numbers in Q and K by an angle that depends on the token's position. The dot product of two rotated vectors then depends on how far apart the tokens are. `rope_theta` in `config.json` sets the rotation speeds (1,000,000 for Qwen3). Stretching those rotations (YaRN etc.) is how context windows get extended (module 04). RoPE has no tensors: it's pure math applied at runtime.
+
+## The MLP: where most of the parameters live
+
+After attention, each token goes through the MLP (also called the FFN) on its own. Modern models use **SwiGLU** ([Shazeer, 2020](https://arxiv.org/abs/2002.05202)):
+
+```python
+h = silu(gate_proj(x)) * up_proj(x)     # 1024 → 3072, two parallel projections
+x_out = down_proj(h)                    # 3072 → 1024
+```
+
+In Qwen3-0.6B the three MLP matrices hold 9.4M of each layer's 15.7M parameters (60%). Research suggests much of the model's factual knowledge sits in these layers ([Geva et al., 2021](https://arxiv.org/abs/2012.14913)). In <T k="moe">MoE</T> models this MLP is replaced by many expert MLPs plus a router (module 08).
+
+## From vector to next token: logits and the logit lens
+
+After the last layer, the final norm and the <T k="lm-head">lm_head</T> turn the vector into 151,936 <T k="logit">logits</T>, one per token, and <T k="softmax">softmax</T> turns them into probabilities.
+
+You can apply that same final step after *any* layer to see what the model "would say" at that depth. This trick is called the **logit lens** ([nostalgebraist, 2020](https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens)):
+
+<FigLens />
+
+## Sampling: turning probabilities into text
+
+The model only produces probabilities. The **sampler** picks the actual token:
+
+- **Greedy**: always take the top token. Deterministic, but tends to loop.
+- **Temperature** divides the logits before softmax. Below 1 makes the top tokens dominate, above 1 flattens the distribution.
+- **Top-k** keeps only the k most likely tokens.
+- **Top-p (nucleus)** keeps the smallest set whose probabilities add up to p ([Holtzman et al., 2019](https://arxiv.org/abs/1904.09751)).
+- **Min-p** keeps tokens with at least p × the top token's probability, so it adapts to how confident the model is ([Nguyen et al., 2024](https://arxiv.org/abs/2407.01082)).
+
+Model cards recommend settings. Qwen3's `generation_config.json`, for example, ships temperature 0.6, top-p 0.95, top-k 20. Play with them on real logits:
+
+<FigSample />
+
+## Linear attention and hybrid layers
+
+Normal attention compares every token with every earlier one, so cost grows with the square of the length, and the KV cache grows with every token. **Linear attention** variants keep a fixed-size running state instead. Qwen3-Next, Qwen3.5 and Ornith use **Gated DeltaNet** ([Yang et al., 2024](https://arxiv.org/abs/2412.06464)) in 3 of every 4 layers and normal attention in the fourth (`full_attention_interval: 4` in their configs; module 09 compares them). The fixed-size layers keep long contexts cheap, and the full-attention layers keep precise recall.
+
+## Where to go deeper
+
+- 3Blue1Brown, [Attention in transformers, visually explained](https://www.3blue1brown.com/lessons/attention).
+- Jay Alammar, [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/).
+- Andrej Karpathy, [Let's build GPT: from scratch, in code](https://www.youtube.com/watch?v=kCc8FmEb1nY).
+- Sebastian Raschka, [The Big LLM Architecture Comparison](https://magazine.sebastianraschka.com/p/the-big-llm-architecture-comparison).
