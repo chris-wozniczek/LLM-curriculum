@@ -1,0 +1,84 @@
+---
+models: ["allenai/OLMoE-1B-7B-0125-Instruct (measured routing)", "Qwen3-30B-A3B, DeepSeek-V3, Kimi K2, gpt-oss configs"]
+---
+import T from "../components/T.astro";
+import FigRouter from "../components/figs/FigRouter.astro";
+import R from "../data/olmoe-router.json";
+
+## The idea: many MLPs, only a few used per token
+
+In a dense model, every token goes through the same MLP in every layer (module 03). A **Mixture of Experts** (<T k="moe">MoE</T>) layer replaces that one MLP with many smaller MLPs called **experts**, plus a tiny **router** that picks a few of them for each token ([Shazeer et al., 2017](https://arxiv.org/abs/1701.06538); [Switch Transformer](https://arxiv.org/abs/2101.03961); [Mixtral](https://arxiv.org/abs/2401.04088)).
+
+```python
+scores = router(x)                       # x: [hidden] → one score per expert
+w, idx = scores.softmax(-1).topk(k)      # pick the k best experts
+x_out = sum(w[i] * experts[idx[i]](x) for i in range(k))
+```
+
+The router is just a matrix, e.g. `mlp.gate.weight` [64, 2048] in OLMoE: one row per expert. Attention stays shared. Only the MLP gets split up.
+
+## Total vs active parameters
+
+This is where names like **30B-A3B** come from: 30B parameters stored, about 3B used per token.
+
+Measured on OLMoE-1B-7B by counting its tensors:
+
+| | parameters |
+|---|---|
+| total | {(R.total_params / 1e9).toFixed(2)}B |
+| inside experts | {(R.expert_params / 1e9).toFixed(2)}B ({(100 * R.expert_params / R.total_params).toFixed(0)}% of the model) |
+| active per token (shared parts + {R.top_k} of {R.experts} experts) | {(R.active_params / 1e9).toFixed(2)}B |
+
+What that means in practice:
+
+- **Memory goes by total.** All experts must be somewhere in memory, because the next token may need any of them. A 30B-A3B still needs ~60 GB in BF16.
+- **Speed goes by active.** Decode is memory-bandwidth bound (module 01), and each token only reads its active experts. A 30B-A3B decodes roughly like a 3B dense model. That's why MoE fits a Mac so well: lots of memory, moderate bandwidth.
+- **Quality sits in between**: usually better than a dense model of the active size, worse than a dense model of the total size.
+
+## Measured: what the router actually does
+
+<FigRouter />
+
+What the measurement shows:
+
+- **Usage is very uneven.** At layer 7, on 2,048 Wikipedia tokens (8 picks each, so 256 picks per expert on average), the busiest expert was picked {Math.max(...R.use.prose.counts[7])} times and the quietest {Math.min(...R.use.prose.counts[7])} times.
+- **Text and code use different experts.** The top 8 experts for prose and for code share 2 at layer 0, 1 at layer 7 and none at layer 15. Specialization exists, but it's along statistical lines (token types, syntax), not neat human topics like "the biology expert".
+- **The router gets more decisive in deeper layers.** The 8 chosen experts hold {(R.use.prose.topk_mass[0] * 100).toFixed(0)}% of the router's probability at layer 0 and {(R.use.prose.topk_mass[15] * 100).toFixed(0)}% at layer 15 (OLMoE renormalizes nothing here; the weights used are the raw softmax values).
+
+## Load balancing
+
+If the router keeps sending everything to the same few experts, the others never learn and the GPUs holding them sit idle. Training adds a fix:
+
+- **Auxiliary balancing loss** (Switch Transformer, OLMoE): an extra loss term that punishes uneven usage. `router_aux_loss_coef` in the config sets its strength.
+- **Auxiliary-loss-free balancing** (DeepSeek-V3): a per-expert bias added to the router scores, nudged up for underused experts and down for overused ones ([DeepSeek-V3 report](https://arxiv.org/abs/2412.19437)). Those are the `e_score_correction_bias` tensors in its repo.
+
+The training loss only cares about balance across a batch, so on a single text the usage can still be lopsided, as measured above.
+
+## Shared experts, fine-grained experts
+
+| model | routed experts | active per token | shared experts | total / active |
+|---|---|---|---|---|
+| Mixtral 8x7B | 8 | 2 | 0 | 47B / 13B |
+| OLMoE-1B-7B | 64 | 8 | 0 | 6.9B / 1.3B |
+| gpt-oss-20b | 32 | 4 | 0 | 21B / 3.6B |
+| Qwen3-30B-A3B | 128 | 8 | 0 | 30.5B / 3.3B |
+| DeepSeek-V3 | 256 | 8 | 1 | 671B / 37B |
+| Kimi K2 | 384 | 8 | 1 | 1T / 32B |
+
+Expert and shared-expert counts are from each model's `config.json`; total/active are from the model cards and papers. The trend: **more, smaller experts** ("fine-grained", [DeepSeekMoE](https://arxiv.org/abs/2401.06066)) give the router more combinations. A **shared expert** runs for every token and learns the common knowledge, so routed experts don't each have to learn it again.
+
+## Running MoE models cheaply
+
+- **Expert offloading**: keep attention and shared parts on the GPU and the expert tensors in system RAM. llama.cpp does this with `--n-cpu-moe N` or `--override-tensor` (`-ot`) patterns that match `exps`. Slower, but it lets a 24 GB GPU run a 100B+ MoE.
+- **Quantize experts hardest**: they're over 90% of the weights and each one is used rarely, so they tolerate fewer bits than attention, embeddings or the router. That's exactly what mixed-precision recipes like ViC305's EXL3 packs do (module 07).
+- **Expert pruning**: delete experts that are rarely used or contribute little and get a smaller model. Methods like REAP score experts by router weight × output size on calibration data ([Lasby et al., 2025](https://arxiv.org/abs/2510.13999)). It removes knowledge the calibration data didn't cover, so test on your own tasks (module 12).
+
+## Try it yourself
+
+`labs/moe_router.py` loads OLMoE (about 14 GB in BF16, fits in 32 GB of RAM) and writes the data behind the figure. On a 64 GB Mac it runs on the CPU or MPS.
+
+## Where to go deeper
+
+- Hugging Face, [Mixture of Experts Explained](https://huggingface.co/blog/moe).
+- Maarten Grootendorst, [A Visual Guide to Mixture of Experts](https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-mixture-of-experts).
+- [OLMoE paper](https://arxiv.org/abs/2409.02060): fully open MoE with data, code and analysis of expert specialization.

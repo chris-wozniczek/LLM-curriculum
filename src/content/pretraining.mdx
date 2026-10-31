@@ -1,0 +1,86 @@
+---
+models: ["tiny GPT trained here from zero (measured)", "published numbers: Llama 3, Qwen3, DeepSeek-V3"]
+---
+import T from "../components/T.astro";
+import FigPretrain from "../components/figs/FigPretrain.astro";
+import P from "../data/tiny-pretrain.json";
+
+## What pretraining is
+
+Pretraining is the first and by far the most expensive phase: take a model with random weights and train it on trillions of tokens of text to do one thing, **predict the next token**. The training loop is the one from module 01: predict, measure the <T k="loss">loss</T>, compute <T k="gradient">gradients</T>, update, repeat. Grammar, facts, coding and reasoning all come out of that one objective.
+
+The result is a **base model**: it continues text, but it doesn't follow instructions or chat. Repos named `-Base` (e.g. `Qwen3-8B-Base`) are this stage. Turning it into an assistant is post-training (module 11).
+
+## Measured: a tiny GPT learning English
+
+To see it happen, this curriculum trained a {(P.params / 1e6).toFixed(2)}M-parameter GPT (same design as module 03, just tiny) on about 1.2M characters of Wikipedia:
+
+<FigPretrain />
+
+How to read it:
+
+- **Step 0**: loss {P.log[0].train}, close to {P.uniform_loss}, the loss of guessing uniformly among {P.vocab} characters. The output is random characters.
+- **Step 100-300**: it has learned letter frequencies, spaces and word-like shapes.
+- **Step {P.log[P.log.length - 1].step}**: training loss {P.log[P.log.length - 1].train}, validation {P.log[P.log.length - 1].val}. Real words and Wikipedia-style phrasing, no meaning yet. The gap between the two lines means it's starting to memorize its small training set.
+
+Real models do the same thing with roughly 10 million times more parameters and data.
+
+## Data
+
+Data quality matters more than any architecture trick. A typical pipeline ([FineWeb](https://arxiv.org/abs/2406.17557) documents one in full):
+
+1. **Collect**: web crawls (Common Crawl), code (GitHub), books, papers, math.
+2. **Extract** the text from HTML and **filter by language**.
+3. **Deduplicate**: the web is full of copies, and duplicates waste compute and encourage memorization.
+4. **Filter for quality**: heuristics plus small classifiers trained to spot "educational" text ([FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu)).
+5. **Remove** personal data and toxic content, and decontaminate against benchmarks (module 14).
+6. **Mix**: choose the share of web, code, math and languages. Late in training, labs often switch to a smaller high-quality mix ("annealing" or mid-training).
+
+Published scale: Llama 3 used about 15T tokens ([Meta, 2024](https://arxiv.org/abs/2407.21783)), Qwen3 about 36T ([Qwen3 report](https://arxiv.org/abs/2505.09388)), DeepSeek-V3 14.8T ([report](https://arxiv.org/abs/2412.19437)).
+
+## Tokenizer first
+
+Before any training, the tokenizer is built (BPE on a sample of the data, module 02) and frozen, because every embedding row is tied to one token id. Changing it later means retraining the embeddings. That's why model families keep their tokenizer across versions, and why distillation is easiest between models that share one.
+
+## Compute and scaling laws
+
+Training compute is roughly **6 × N × D** FLOPs, with N = parameters and D = training tokens (module 01).
+
+**Scaling laws** ([Kaplan et al., 2020](https://arxiv.org/abs/2001.08361); [Hoffmann et al., 2022](https://arxiv.org/abs/2203.15556), "Chinchilla") found that loss falls predictably as N and D grow. For a fixed compute budget the best trade-off is roughly **20 tokens per parameter**. Modern models train far past that: Llama 3 8B saw about 15T tokens, ~1,900 per parameter. Training longer costs more once but gives a smaller model that's cheaper to run for everyone afterwards.
+
+A worked example with published numbers: DeepSeek-V3 activates 37B parameters per token and saw 14.8T tokens, so 6 × 37e9 × 14.8e12 ≈ 3.3e24 FLOPs. Its report states 2.788M H800 GPU-hours for the full training.
+
+## Precision and parallelism
+
+- **Mixed precision**: weights and math in BF16 (or FP8), with an FP32 master copy and optimizer states (module 06). DeepSeek-V3 trained its big matrix multiplies in FP8.
+- **Data parallel**: every GPU holds a copy of the model and works on different batches, then gradients are averaged. **ZeRO / FSDP** shard the weights, gradients and optimizer state across GPUs instead of copying them ([ZeRO](https://arxiv.org/abs/1910.02054)).
+- **Tensor parallel**: one matrix multiply split across GPUs in the same server ([Megatron-LM](https://arxiv.org/abs/1909.08053)).
+- **Pipeline parallel**: different layers on different GPUs, with micro-batches flowing through like an assembly line.
+- **Expert parallel**: different MoE experts on different GPUs.
+
+Big runs combine all of these ("3D/4D parallelism") over thousands of GPUs, and handle hardware failures and loss spikes along the way.
+
+## What you can realistically do
+
+| goal | scale | cost |
+|---|---|---|
+| learn how it works | this lab, [nanoGPT](https://github.com/karpathy/nanoGPT) | free, a laptop |
+| tiny ChatGPT end to end | [nanochat](https://github.com/karpathy/nanochat) | about $100 on 8×H100 (Karpathy's figure) |
+| continued pretraining of an open base on your domain | billions of tokens | thousands of $ |
+| a competitive 7B from scratch | trillions of tokens | far beyond a personal budget |
+
+For almost every real project the right move is to start from an open base or instruct model and post-train it. That's what Otter does (module 11).
+
+## Try it yourself
+
+```bash
+python labs/tiny_pretrain.py --text wikitext2-test.parquet --steps 1500 --out pretrain.json
+```
+
+About 2 minutes on a laptop CPU. Change the width, layers or steps and watch the loss curve move.
+
+## Where to go deeper
+
+- Andrej Karpathy, [Let's reproduce GPT-2 (124M)](https://www.youtube.com/watch?v=l8pRSuU81PU).
+- Hugging Face, [The Ultra-Scale Playbook](https://huggingface.co/spaces/nanotron/ultrascale-playbook): every parallelism trick, with measurements.
+- Hugging Face, [The Smol Training Playbook](https://huggingface.co/spaces/HuggingFaceTB/smol-training-playbook).

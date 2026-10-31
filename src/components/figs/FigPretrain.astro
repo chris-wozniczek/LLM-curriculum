@@ -1,0 +1,29 @@
+---
+import Fig from "../Fig.astro";
+import P from "../../data/tiny-pretrain.json";
+const p = P as any, mx = p.log[p.log.length - 1].step, steps = Object.keys(p.samples);
+const X = (s: number) => 40 + (s / mx) * 250, Y = (v: number) => 10 + ((6 - v) / 5) * 170;
+const line = (k: string) => p.log.map((r: any, i: number) => `${i ? "L" : "M"}${X(r.step).toFixed(1)},${Y(r[k]).toFixed(1)}`).join(" ");
+---
+<Fig title="Measured: pretraining a tiny GPT from zero" sub={`${(p.params / 1e6).toFixed(2)}M parameters · characters as tokens · ${(p.tokens_seen / 1e6).toFixed(1)}M tokens seen · ${Math.round(p.log[p.log.length - 1].s)} s on CPU`}>
+  <svg viewBox="0 0 300 200" style="width:100%;max-width:520px;display:block;margin:0 auto">
+    {[1, 2, 3, 4, 5].map((v) => <g><line x1="40" x2="290" y1={Y(v)} y2={Y(v)} stroke="rgba(255,255,255,.07)" /><text x="34" y={Y(v) + 3} text-anchor="end" font-size="8" fill="rgba(238,241,245,.5)">{v}</text></g>)}
+    <line x1="40" x2="290" y1={Y(p.uniform_loss)} y2={Y(p.uniform_loss)} stroke="var(--hot)" stroke-dasharray="3 3" opacity=".6" />
+    <text x="288" y={Y(p.uniform_loss) - 4} text-anchor="end" font-size="7.5" fill="var(--hot)">random guessing = ln({p.vocab}) = {p.uniform_loss}</text>
+    <path d={line("train")} fill="none" stroke="var(--accent)" stroke-width="1.6" />
+    <path d={line("val")} fill="none" stroke="var(--blue)" stroke-width="1.6" stroke-dasharray="4 2" />
+    <text x="290" y="196" text-anchor="end" font-size="8" fill="rgba(238,241,245,.5)">step {mx}</text>
+    <text x="44" y="196" font-size="8" fill="var(--accent)">train</text><text x="74" y="196" font-size="8" fill="var(--blue)">validation</text>
+  </svg>
+  <div class="row" style="margin-top:12px"><div class="seg" id="pt-s">{steps.map((s, i) => <button data-s={s} class={i === steps.length - 1 ? "on" : ""}>after {s} steps</button>)}</div></div>
+  <script type="application/json" id="pt-data" set:html={JSON.stringify(p.samples)} />
+  <pre id="pt-out" style="white-space:pre-wrap"></pre>
+  <Fragment slot="cap">Measured with <code>labs/tiny_pretrain.py</code>: 4 layers, width 128, 128-character context, AdamW with warmup + cosine schedule, trained on 90% of the WikiText-2 test split and validated on the other 10%. Samples start from " The" at temperature 0.8. When the validation line starts drifting above the training line, the model is beginning to memorize its training text.</Fragment>
+</Fig>
+<script>
+  const S = JSON.parse(document.getElementById("pt-data")!.textContent!);
+  const out = document.getElementById("pt-out")!;
+  const show = (k: string) => (out.textContent = S[k]);
+  document.querySelectorAll<HTMLButtonElement>("#pt-s button").forEach((b) => b.addEventListener("click", () => { document.querySelectorAll("#pt-s button").forEach((y) => y.classList.remove("on")); b.classList.add("on"); show(b.dataset.s!); }));
+  show(document.querySelector<HTMLButtonElement>("#pt-s button.on")!.dataset.s!);
+</script>
