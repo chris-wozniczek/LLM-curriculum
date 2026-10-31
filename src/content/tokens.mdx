@@ -1,0 +1,86 @@
+---
+models: ["9 real tokenizers (measured)", "Qwen3, Qwen3.5, Ornith, DeepSeek-V3, Kimi K2, gpt-oss, Llama 3.1, Gemma 3, Mistral Small 3.1"]
+---
+import T from "../components/T.astro";
+import FigTokens from "../components/figs/FigTokens.astro";
+
+## Models don't read letters
+
+A model only ever sees integers. The **tokenizer** cuts text into pieces called tokens and swaps each piece for its id in the <T k="vocab">vocabulary</T>. `" Paris"` is one id, `"Kwantyzacja"` might be four. The model's very first layer, the <T k="embedding">embedding</T> table, then turns each id into a vector of `hidden_size` numbers (module 01).
+
+<div class="callout plain"><b>Plain language</b><p>A tokenizer is a phrasebook. Common chunks ("ing", " the", " Paris") get their own entry. Rare words get spelled out from smaller entries. The model only learns about entries, never about letters, which is why models are bad at counting the r's in "strawberry".</p></div>
+
+## BPE: how the vocabulary gets built
+
+Nearly all current LLMs use **byte-pair encoding** (<T k="bpe">BPE</T>, [Sennrich et al., 2016](https://arxiv.org/abs/1508.07909)), usually the byte-level variant introduced with GPT-2 ([Radford et al., 2019](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf)):
+
+1. Start with the 256 possible bytes. Any text, in any language, can be written with them.
+2. Count which neighbouring pair appears most often in a big training corpus (say `t` + `h`).
+3. Add the merged pair `th` as a new token. Record the merge.
+4. Repeat until the vocabulary has the size you want: 128k, 150k, 260k.
+
+Encoding new text replays the recorded merges in the same order. That's what `merges.txt` (Qwen3) or the `merges` list inside `tokenizer.json` stores. Because everything starts from bytes, there is no "unknown word": an emoji the tokenizer never merged just becomes 3-4 byte tokens.
+
+Before BPE runs, a **pre-tokenizer** regex splits text into words, numbers and punctuation so merges never cross those borders. That regex is why tokenizers differ on digits: Qwen and Gemma split numbers into single digits, while Llama 3, gpt-oss, DeepSeek and Kimi group up to three digits per token. Look at the "Numbers" column below: 36 vs 23 tokens for the same line.
+
+## Measured: one text, nine tokenizers
+
+<FigTokens />
+
+What the numbers show:
+
+- **English is cheap everywhere.** The English sentence is 10 tokens in all nine tokenizers. These vocabularies were built mostly from English text.
+- **Polish costs 2× more tokens**: 20 (Qwen3.5/Ornith) to 29 (Kimi K2) for a sentence of similar length. More tokens means more compute, less text fitting in the <T k="context">context</T>, and higher API bills. Bigger vocabularies with more multilingual data help: Qwen3.5's 248k vocab beats Qwen3's 151k on Polish (20 vs 21) and Chinese (7 vs 8).
+- **Ornith uses the Qwen3.5 tokenizer**: identical vocab size and identical counts on every text.
+- **Mistral Small 3.1 needs 16 tokens for the Chinese sentence**, others need 7-9.
+
+## Vocab size and the embedding table
+
+Each token gets one row in the embedding table and (unless the embeddings are <T k="tied">tied</T>) one row in the <T k="lm-head">lm_head</T>. So the vocabulary has a real cost in parameters:
+
+| model | vocab_size (config) | hidden_size | embedding parameters |
+|---|---|---|---|
+| Qwen3-0.6B | 151,936 | 1,024 | 155.6M (26% of the model!) |
+| Qwen3.5-9B / Ornith | 248,320 | 4,096 | 1.02B |
+| DeepSeek-V3 | 129,280 | 7,168 | 0.93B (of 671B) |
+
+For a tiny model the vocabulary is a big share of all weights. That's why small models tie embeddings and big ones don't bother.
+
+Notice that `vocab_size` in `config.json` (151,936 for Qwen3) is bigger than the number of tokens the tokenizer actually has (151,669). The extra rows are padding: tables sized to a round multiple run faster on GPUs, and those ids are never produced.
+
+## Special tokens and chat templates
+
+Some tokens are never produced by splitting text. They are **<T k="special-token">special tokens</T>** with fixed meanings: begin-of-text, end-of-turn, "the assistant speaks now", tool-call markers, `<think>`. Qwen3 has 14 of them, Kimi K2 12, Gemma 3 8.
+
+A chat is a list of messages, but the model reads one flat token stream. The **<T k="chat-template">chat template</T>** (a Jinja program in `tokenizer_config.json` or `chat_template.jinja`) flattens the messages using those special tokens. Click through the models in the figure and compare the bottom box: every family invented its own format. Qwen uses `<|im_start|>role ... <|im_end|>`, DeepSeek `<｜User｜>`, Gemma `<start_of_turn>`, gpt-oss its "harmony" format with channels.
+
+<div class="callout warn"><b>Why this matters in practice</b><p>The model only behaves well with the exact format it was trained on. A missing end token makes it ramble forever, a wrong tool-call format makes agents fail, a missing <code>&lt;think&gt;</code> block changes how Qwen3 reasons. When a model "suddenly got dumb" in a new tool, check the template first.</p></div>
+
+## The tokenizer files
+
+| file | what it holds |
+|---|---|
+| `tokenizer.json` | everything needed to tokenize: vocab (token → id), merges, the pre-tokenizer regex, normalizer, added/special tokens. One file read by the fast Rust `tokenizers` library. |
+| `tokenizer_config.json` | settings around it: tokenizer class, special-token roles (bos/eos/pad), `model_max_length`, often the `chat_template` |
+| `vocab.json` + `merges.txt` | the older GPT-2 style split of the same information |
+| `tokenizer.model` / `tiktoken.model` | SentencePiece or tiktoken files. Kimi K2 ships a tiktoken file plus its own Python tokenizer code (`trust_remote_code`). |
+| `chat_template.jinja` | newer repos keep the template as a separate file |
+| `generation_config.json` | not tokenizer, but related: which token ids stop generation, and default sampling settings |
+
+## Try it yourself
+
+```python
+from transformers import AutoTokenizer
+tok = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
+ids = tok.encode("Kwantyzacja sprawia, że duże modele są mniejsze.")
+print(len(ids), [tok.decode([i]) for i in ids])
+print(tok.apply_chat_template([{"role": "user", "content": "hi"}], tokenize=False, add_generation_prompt=True))
+```
+
+The full script that produced the figure is `labs/tokenizers_compare.py`.
+
+## Where to go deeper
+
+- Andrej Karpathy, [Let's build the GPT Tokenizer](https://www.youtube.com/watch?v=zduSFxRajkE): builds BPE from scratch and covers all the weird failure modes.
+- Hugging Face, [Tokenizers course chapter](https://huggingface.co/learn/llm-course/chapter6/1): BPE, WordPiece, Unigram, and training your own.
+- [Chat templates docs](https://huggingface.co/docs/transformers/main/en/chat_templating).

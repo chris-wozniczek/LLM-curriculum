@@ -1,0 +1,47 @@
+---
+import Fig from "../Fig.astro";
+import D from "../../data/tokenizers.json";
+const models = (D as any).models as any[];
+const keys = Object.keys((D as any).texts);
+const pick = models.findIndex((m) => m.name === "Qwen3-0.6B");
+---
+<Fig title="Measured: the same text through 9 real tokenizers" sub="each chip is one token · hover a chip for its id">
+  <script type="application/json" id="tk-data" set:html={JSON.stringify(models.map((m) => ({ name: m.name, vocab: m.vocab, pieces: m.pieces, chat: m.chat })))} />
+  <div class="row"><div class="seg" id="tk-m">{models.map((m, i) => <button data-i={i} class={i === pick ? "on" : ""}>{m.name}</button>)}</div></div>
+  <div class="row" style="margin-top:10px"><div class="seg" id="tk-t">{keys.map((k, i) => <button data-k={k} class={i === 0 ? "on" : ""}>{k}</button>)}</div></div>
+  <div id="tk-chips"></div>
+  <div class="stats" id="tk-out"></div>
+  <div class="scroll-x">
+    <table class="tbl">
+      <thead><tr><th>tokenizer</th><th class="r">vocab</th>{keys.map((k) => <th class="r">{k}</th>)}</tr></thead>
+      <tbody>{models.map((m) => <tr><td>{m.name}</td><td class="r">{m.vocab.toLocaleString("en-US")}</td>{keys.map((k) => <td class="r">{m.counts[k]}</td>)}</tr>)}</tbody>
+    </table>
+  </div>
+  <div class="tk-h">Chat template output for one system + user + assistant turn</div>
+  <pre id="tk-chat"></pre>
+  <Fragment slot="cap">Token counts and template output from <code>labs/tokenizers_compare.py</code>, using each repo's own tokenizer files. Vocab = tokens the tokenizer knows, including special tokens. "�" chips are pieces of one multi-byte character (an emoji or Chinese character split across tokens). gpt-oss and Llama templates add a date line automatically; the date shown is the day the script ran.</Fragment>
+</Fig>
+<style>
+  #tk-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0 6px; font: 500 14px/1 var(--mono); }
+  #tk-chips span { padding: 7px 6px; border-radius: 6px; white-space: pre; border: 1px solid var(--line-2); }
+  #tk-chips span:nth-child(5n+1) { background: rgba(110,231,183,.12); } #tk-chips span:nth-child(5n+2) { background: rgba(125,170,255,.13); }
+  #tk-chips span:nth-child(5n+3) { background: rgba(255,190,100,.12); } #tk-chips span:nth-child(5n+4) { background: rgba(240,130,200,.12); }
+  #tk-chips span:nth-child(5n) { background: rgba(170,140,255,.13); }
+  .tk-h { margin: 18px 0 6px; font: 600 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  #tk-chat { white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; font-size: 12.5px; }
+</style>
+<script>
+  const M = JSON.parse(document.getElementById("tk-data")!.textContent!);
+  let mi = M.findIndex((m: any) => m.name === "Qwen3-0.6B"), tk = document.querySelector<HTMLButtonElement>("#tk-t button")!.dataset.k!;
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  function draw() {
+    const m = M[mi], ps = m.pieces[tk];
+    document.getElementById("tk-chips")!.innerHTML = ps.map((p: any) => `<span title="id ${p.id}">${esc(p.s.replace(/\n/g, "⏎").replace(/ /g, "·"))}</span>`).join("");
+    const st = (k: string, v: string) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`;
+    const chars = [...ps.map((p: any) => p.s).join("")].length;
+    document.getElementById("tk-out")!.innerHTML = st("tokens", String(ps.length)) + st("characters", String(chars)) + st("chars / token", (chars / ps.length).toFixed(2)) + st("vocab", m.vocab.toLocaleString("en-US"));
+    document.getElementById("tk-chat")!.textContent = m.chat || "(no template)";
+  }
+  const seg = (id: string, f: (b: HTMLButtonElement) => void) => document.querySelectorAll<HTMLButtonElement>(`#${id} button`).forEach((b) => b.addEventListener("click", () => { document.querySelectorAll(`#${id} button`).forEach((y) => y.classList.remove("on")); b.classList.add("on"); f(b); draw(); }));
+  seg("tk-m", (b) => (mi = +b.dataset.i!)); seg("tk-t", (b) => (tk = b.dataset.k!)); draw();
+</script>
