@@ -28,7 +28,7 @@ const maxK = Math.max(...cfg.map((c) => c.kld_mean));
       <div id="ff-probe"></div>
     </div>
     <div>
-      <div class="ff-h">Where the KLD comes from: per-token KLD, log scale</div>
+      <div class="ff-h">Where the KLD comes from: per-token KLD, log scale (outliers counted in the end bars)</div>
       <svg id="ff-hist" viewBox="0 0 300 140" style="width:100%;height:160px"></svg>
       <div class="stats" id="ff-tail"></div>
     </div>
@@ -61,8 +61,8 @@ const maxK = Math.max(...cfg.map((c) => c.kld_mean));
     document.getElementById("ff-probe")!.innerHTML = D.ref.map((r: any, j: number) => `<div class="pp"><code>${esc(r.prompt)}</code><div class="pc"><div><small>ORIGINAL</small>${col(r.top5, c.probe[j].top5)}</div><div><small>${esc(c.k.toUpperCase())}</small>${col(c.probe[j].top5, r.top5)}</div></div></div>`).join("");
     const h: number[] = c.hist, mx = Math.max(...h), bw = 300 / h.length;
     let s = "";
-    h.forEach((v, j) => { const hh = (v / mx) * 112; s += `<rect x="${j * bw + 1}" y="${116 - hh}" width="${bw - 2}" height="${hh}" rx="2" fill="${j < 13 ? "var(--led)" : j < 18 ? "var(--amber)" : "var(--hot)"}" opacity=".8"/>`; });
-    [-8, -6, -4, -2, 0].forEach((e) => { const x = ((e + 8) / 9) * 300; s += `<text x="${x}" y="134" fill="rgba(238,241,245,.45)" font-size="9" font-family="monospace" text-anchor="middle">1e${e}</text>`; });
+    h.forEach((v, j) => { const hh = (v / mx) * 112; s += `<rect x="${j * bw + 1}" y="${116 - hh}" width="${bw - 2}" height="${hh}" rx="2" fill="${j < 13 ? "var(--led)" : j < 16 ? "var(--amber)" : "var(--hot)"}" opacity=".8"/>`; });
+    [-8, -6, -4, -2, 0, 2].forEach((e) => { const x = Math.min(292, Math.max(8, ((e + 8) / 10) * 300)); s += `<text x="${x}" y="134" fill="rgba(238,241,245,.45)" font-size="9" font-family="monospace" text-anchor="middle">${e === 2 ? "1e2+" : "1e" + e}</text>`; });
     (document.getElementById("ff-hist") as unknown as SVGElement).innerHTML = s;
     const st = (k: string, v: string) => `<div class="stat"><small>${k}</small><b style="font-size:15px">${v}</b></div>`;
     document.getElementById("ff-tail")!.innerHTML = st("median", c.med.toFixed(5)) + st("99th pct", c.p99.toFixed(3)) + st("worst token", c.max.toFixed(2));
