@@ -1,0 +1,29 @@
+---
+import Fig from "../Fig.astro";
+import R from "../../data/qwen3-inside.json";
+const layers = Object.keys((R as any).attn);
+---
+<Fig title="Measured: attention inside Qwen3-0.6B" sub="each row = one token looking back at earlier tokens · darker = more attention">
+  <script type="application/json" id="at-data" set:html={JSON.stringify({ tokens: R.sent.tokens, attn: R.attn })} />
+  <div class="row"><div class="seg" id="at-l">{layers.map((l, i) => <button data-l={l} class={i === 3 ? "on" : ""}>layer {l}</button>)}</div></div>
+  <div class="row" style="margin-top:10px"><div class="seg" id="at-h">{Array.from({ length: 16 }, (_, h) => <button data-h={h} class={h === 0 ? "on" : ""}>{h}</button>)}</div></div>
+  <svg id="at-map" viewBox="0 0 420 330" style="width:100%;max-width:560px;display:block;margin:14px auto 0"></svg>
+  <Fragment slot="cap">Real attention weights from <code>labs/inside_qwen.py</code> (eager attention, FP32, CPU) for one sentence. Pick a layer and one of the 16 query heads. The upper triangle is empty because of the causal mask: a token can't look at the future. Many heads park most of their attention on the first token (an "attention sink"); that's normal.</Fragment>
+</Fig>
+<script>
+  const D = JSON.parse(document.getElementById("at-data")!.textContent!);
+  let L = document.querySelector<HTMLButtonElement>("#at-l button.on")!.dataset.l!, H = 0;
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  function draw() {
+    const A: number[][] = D.attn[L][H], n = D.tokens.length, c = 300 / n, x0 = 110, y0 = 10;
+    let s = "";
+    A.forEach((row, i) => {
+      s += `<text x="${x0 - 6}" y="${y0 + i * c + c * 0.65}" text-anchor="end" font-size="10" font-family="monospace" fill="rgba(238,241,245,.7)">${esc(D.tokens[i])}</text>`;
+      row.forEach((v, j) => { if (j <= i) s += `<rect x="${x0 + j * c}" y="${y0 + i * c}" width="${c - 1}" height="${c - 1}" rx="2" fill="var(--accent)" opacity="${(0.05 + 0.95 * Math.sqrt(v)).toFixed(3)}"><title>${esc(D.tokens[i])} → ${esc(D.tokens[j])}: ${(v * 100).toFixed(1)}%</title></rect>`; });
+    });
+    D.tokens.forEach((t: string, j: number) => (s += `<text transform="translate(${x0 + j * c + c * 0.6},${y0 + n * c + 6}) rotate(55)" font-size="9.5" font-family="monospace" fill="rgba(238,241,245,.55)">${esc(t)}</text>`));
+    document.getElementById("at-map")!.innerHTML = s;
+  }
+  const seg = (id: string, f: (b: HTMLButtonElement) => void) => document.querySelectorAll<HTMLButtonElement>(`#${id} button`).forEach((b) => b.addEventListener("click", () => { document.querySelectorAll(`#${id} button`).forEach((y) => y.classList.remove("on")); b.classList.add("on"); f(b); draw(); }));
+  seg("at-l", (b) => (L = b.dataset.l!)); seg("at-h", (b) => (H = +b.dataset.h!)); draw();
+</script>

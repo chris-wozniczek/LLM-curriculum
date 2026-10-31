@@ -1,0 +1,26 @@
+---
+import Fig from "../Fig.astro";
+import R from "../../data/qwen3-inside.json";
+const lens = (R as any).lens as any[];
+---
+<Fig title="Measured: when does Qwen3-0.6B decide on “Paris”?" sub="“The capital of France is” · final norm + lm_head applied after every layer (logit lens)">
+  <div class="ln">
+    {lens.map((l) => (
+      <div class="ln-row">
+        <span class="ln-l">L{String(l.layer).padStart(2, "0")}</span>
+        <span class="ln-t">{l.top.map((t: string, i: number) => <code title={`${(l.p[i] * 100).toFixed(1)}%`}>{JSON.stringify(t).slice(1, -1)}</code>)}</span>
+        <span class="ln-b"><i style={`width:${Math.max(0.5, l.paris * 100)}%`}></i></span>
+        <span class="ln-p">{(l.paris * 100).toFixed(l.paris < 0.01 ? 2 : 1)}%</span>
+      </div>
+    ))}
+  </div>
+  <Fragment slot="cap">For each of the 28 layers: the top-3 tokens if the model had to answer right there, and the probability of " Paris" (bar). Measured with <code>labs/inside_qwen.py</code>. Early layers produce generic continuations, the middle layers produce junk like "____", and the answer appears around layer 21-22 and peaks at layer 25 (96%). The last layers trade some confidence for alternatives (65.7% at the output).</Fragment>
+</Fig>
+<style>
+  .ln { display: grid; gap: 3px; margin-top: 8px; font: 500 12px/1.2 var(--mono); }
+  .ln-row { display: grid; grid-template-columns: 36px minmax(0, 1.4fr) 1fr 52px; gap: 10px; align-items: center; }
+  .ln-l { color: var(--ink-3); } .ln-t { display: flex; gap: 4px; overflow: hidden; white-space: pre; }
+  .ln-t code { font-size: 11.5px; padding: 2px 5px; }
+  .ln-b { height: 8px; border-radius: 4px; background: rgba(255,255,255,.05); } .ln-b i { display: block; height: 100%; border-radius: 4px; background: var(--led); }
+  .ln-p { text-align: right; color: var(--ink-2); }
+</style>
