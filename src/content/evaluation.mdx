@@ -23,7 +23,7 @@ Evaluation answers one of two questions, and mixing them up causes most confusio
 | tool / function calling | [BFCL](https://gorilla.cs.berkeley.edu/leaderboard.html) | calls have the right function, arguments and format |
 | chat preference | [LMArena](https://lmarena.ai/) | humans vote between two anonymous answers |
 
-Agent benchmarks score the **model plus its harness** (scaffold): the prompt, the tools, the retry logic, the context management. The same model can score very differently in Terminus-2, Claude Code or OpenCode, so a score only means something with the harness named.
+Agent benchmarks score the **model plus its harness** (scaffold): the prompt, the tools, the retry logic, the context management. The same model can score very differently in Terminus-2, Claude Code or OpenCode, so a score only means something with the harness named. A published example: the same 2.6B model solved 62% of tasks in Mini-SWE-Agent and 33% in Claude Code ([module 11](/learn/post-training#agentic-rl-in-real-harnesses)).
 
 ## Contamination
 

@@ -60,6 +60,10 @@ export const glossary: Term[] = [
   { k: "chat-template", t: "Chat template", d: "A small Jinja program shipped with the tokenizer that turns a list of chat messages into the exact token stream the model was trained on.", m: "tokens" },
   { k: "gradient", t: "Gradient", d: "For every parameter, how much the loss would change if that parameter went up a little. Training moves each parameter a small step against its gradient.", m: "foundations" },
   { k: "loss", t: "Loss", d: "One number saying how wrong the model is. For LLMs: cross-entropy, -log(probability the model gave the real next token).", m: "foundations" },
+  { k: "harness", t: "Harness (agent scaffold)", d: "The program around the model that runs the agent loop: gives it tools, builds the context, parses its replies and decides when to stop. OpenCode, Claude Code, Codex and Terminus-2 are harnesses. The same model can score very differently in different harnesses.", m: "post-training" },
+  { k: "rl-environment", t: "RL environment", d: "The system a model acts on during RL. It owns the task, state, tools, observations, reward and when the episode ends.", m: "post-training" },
+  { k: "openenv", t: "OpenEnv", d: "A standard interface for RL environments (reset / step / state, typed actions and observations, packaged as Docker, publishable to the Hub). It doesn't train or define rewards.", m: "post-training" },
+  { k: "grpo", t: "GRPO", d: "Group Relative Policy Optimization: sample a group of answers to one prompt, score them, and reinforce each by how it compares with the group average. If every answer scores the same, the group teaches nothing.", m: "post-training" },
 ];
 
 export const terms = Object.fromEntries(glossary.map((g) => [g.k, g]));

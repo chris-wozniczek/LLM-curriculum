@@ -1,0 +1,50 @@
+---
+import Fig from "../Fig.astro";
+import D from "../../data/multi-harness-rl.json";
+const runs = Object.entries(D.runs).filter(([k]) => k !== "base");
+---
+<Fig title="Same model, four harnesses: what training where does" sub="LFM2.5-2.6B on 250 held-out tasks × 4 harnesses, pass@1 (data from the FineEnvs article)">
+  <div class="row"><div class="seg" id="mh-run">{runs.map(([k, r]) => <button data-k={k} class={k === "rl_multi" ? "on" : ""}>{r.label.replace(/, best checkpoint.*/, "")}</button>)}</div></div>
+  <svg id="mh-bars" viewBox="0 0 320 150" style="width:100%;max-width:620px;display:block;margin:12px auto 0"></svg>
+  <div class="stats" id="mh-out"></div>
+  <div class="row" style="margin-top:18px"><div class="seg" id="mh-cv"><button data-m="lfm" class="on">LFM2.5-2.6B curves</button><button data-m="qwen">Qwen3.5-2B curves</button></div></div>
+  <svg id="mh-line" viewBox="0 0 320 130" style="width:100%;max-width:620px;display:block;margin:10px auto 0"></svg>
+  <script type="application/json" id="mh-data" set:html={JSON.stringify(D)} />
+  <Fragment slot="cap">Grey = base model, colour = the trained run. RL rows are the best evaluated checkpoint (step 900 OpenCode-only, step 700 multi-harness), picked on this same test set; SFT rows are epoch 2. "Fewer tool calls" compares calls on task/harness pairs both the base and the run solved. Each cell runs once, so 1-2 points between runs is noise. Bottom: overall pass@1 every 100 steps; the Qwen3.5-2B runs rose and then fell back. Numbers are copied from the article's data files (<a href="https://huggingface.co/spaces/FineEnvs/multi-harness-rl">FineEnvs/multi-harness-rl</a>, CC BY 4.0), not measured by us.</Fragment>
+</Fig>
+<script>
+  const D = JSON.parse(document.getElementById("mh-data")!.textContent!);
+  const H: string[] = D.harnesses, sel = { run: "rl_multi", m: "lfm" };
+  const st = (k: string, v: string) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`;
+  function bars() {
+    const b = D.runs.base.pass, r = D.runs[sel.run].pass, w = 300 / H.length; let s = "";
+    H.forEach((h, i) => {
+      const x = 14 + i * w, hb = b[h] * 1.1, hr = r[h] * 1.1, d = r[h] - b[h];
+      s += `<rect x="${x + 8}" y="${120 - hb}" width="${w / 2 - 12}" height="${hb}" rx="2" fill="rgba(238,241,245,.22)"><title>base ${b[h]}%</title></rect>`;
+      s += `<rect x="${x + w / 2}" y="${120 - hr}" width="${w / 2 - 12}" height="${hr}" rx="2" fill="var(--accent)" opacity=".85"><title>${D.runs[sel.run].label}: ${r[h]}%</title></rect>`;
+      s += `<text x="${x + w / 2 - 2}" y="${114 - Math.max(hb, hr)}" text-anchor="middle" font-size="8" fill="${d >= 0 ? "var(--accent)" : "#ff8a80"}" font-family="var(--mono)">${d >= 0 ? "+" : ""}${d.toFixed(1)}</text>`;
+      s += `<text x="${x + w / 2 - 2}" y="133" text-anchor="middle" font-size="8" fill="rgba(238,241,245,.6)">${D.labels[h]}</text>`;
+      s += `<text x="${x + w / 2 - 2}" y="144" text-anchor="middle" font-size="7" fill="rgba(238,241,245,.4)" font-family="var(--mono)">${b[h]} → ${r[h]}</text>`;
+    });
+    document.getElementById("mh-bars")!.innerHTML = s;
+    const run = D.runs[sel.run];
+    document.getElementById("mh-out")!.innerHTML = st("method", run.method.toUpperCase()) + st("overall", `${D.runs.base.pass.overall}% → ${run.pass.overall}%`) + st("fewer tool calls", `${run.tool_call_savings}%`);
+  }
+  function lines() {
+    const ks = Object.keys(D.curves).filter((k) => k.startsWith(sel.m)), cols = ["var(--blue)", "var(--accent)"];
+    const X = (s: number) => 30 + (s / 1000) * 280, Y = (v: number) => 110 - v * 1.6; let s = "";
+    [0, 20, 40, 60].forEach((v) => (s += `<line x1="30" x2="310" y1="${Y(v)}" y2="${Y(v)}" stroke="rgba(238,241,245,.08)"/><text x="24" y="${Y(v) + 3}" text-anchor="end" font-size="7" fill="rgba(238,241,245,.4)">${v}%</text>`));
+    ks.forEach((k, i) => {
+      const p: [number, number][] = D.curves[k].points;
+      s += `<polyline fill="none" stroke="${cols[i]}" stroke-width="1.6" points="${p.map(([a, v]) => `${X(a)},${Y(v)}`).join(" ")}"/>`;
+      p.forEach(([a, v]) => (s += `<circle cx="${X(a)}" cy="${Y(v)}" r="1.8" fill="${cols[i]}"><title>step ${a}: ${v}%</title></circle>`));
+      s += `<text x="${36 + i * 140}" y="124" font-size="7.5" fill="${cols[i]}">● ${D.curves[k].label.split(" · ")[1]}</text>`;
+    });
+    s += `<text x="310" y="124" text-anchor="end" font-size="7" fill="rgba(238,241,245,.4)">step 0 → 1000</text>`;
+    document.getElementById("mh-line")!.innerHTML = s;
+  }
+  const seg = (id: string, f: (b: HTMLButtonElement) => void) => document.querySelectorAll<HTMLButtonElement>(`#${id} button`).forEach((b) => b.addEventListener("click", () => { document.querySelectorAll(`#${id} button`).forEach((y) => y.classList.remove("on")); b.classList.add("on"); f(b); }));
+  seg("mh-run", (b) => { sel.run = b.dataset.k!; bars(); });
+  seg("mh-cv", (b) => { sel.m = b.dataset.m!; lines(); });
+  bars(); lines();
+</script>

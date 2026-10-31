@@ -1,0 +1,285 @@
+{
+ "source": "https://huggingface.co/spaces/FineEnvs/multi-harness-rl",
+ "license": "CC BY 4.0",
+ "note": "Copied from the article data files sft-vs-rl.json and training-results.json (run audit through 2026-09-29). Not measured by us.",
+ "harnesses": [
+  "opencode",
+  "claude-code",
+  "codex",
+  "mini-swe-agent"
+ ],
+ "labels": {
+  "opencode": "OpenCode",
+  "claude-code": "Claude Code",
+  "codex": "Codex",
+  "mini-swe-agent": "Mini-SWE-Agent"
+ },
+ "runs": {
+  "base": {
+   "label": "LFM base model",
+   "method": "base",
+   "pass": {
+    "overall": 42.2,
+    "opencode": 33.6,
+    "claude-code": 33.2,
+    "codex": 40.0,
+    "mini-swe-agent": 62.1
+   },
+   "tool_call_savings": 0
+  },
+  "rl_opencode": {
+   "label": "RL \u00b7 OpenCode only, best checkpoint (step 900)",
+   "method": "rl",
+   "pass": {
+    "overall": 52.4,
+    "opencode": 56.0,
+    "claude-code": 43.6,
+    "codex": 48.4,
+    "mini-swe-agent": 61.6
+   },
+   "tool_call_savings": 13.2
+  },
+  "rl_multi": {
+   "label": "RL \u00b7 multi-harness, best checkpoint (step 700)",
+   "method": "rl",
+   "pass": {
+    "overall": 54.6,
+    "opencode": 51.2,
+    "claude-code": 48.8,
+    "codex": 53.6,
+    "mini-swe-agent": 64.8
+   },
+   "tool_call_savings": 26.7
+  },
+  "sft_opencode_e2": {
+   "label": "SFT \u00b7 OpenCode only",
+   "method": "sft",
+   "pass": {
+    "overall": 47.5,
+    "opencode": 51.6,
+    "claude-code": 33.2,
+    "codex": 46.4,
+    "mini-swe-agent": 58.8
+   },
+   "tool_call_savings": 8.5
+  },
+  "sft_multi_e2": {
+   "label": "SFT \u00b7 multi-harness",
+   "method": "sft",
+   "pass": {
+    "overall": 43.1,
+    "opencode": 38.0,
+    "claude-code": 42.4,
+    "codex": 46.8,
+    "mini-swe-agent": 45.2
+   },
+   "tool_call_savings": 24.2
+  }
+ },
+ "curves": {
+  "lfm_harbor_opencode": {
+   "label": "LFM2.5-2.6B \u00b7 OpenCode only",
+   "points": [
+    [
+     0,
+     42.18
+    ],
+    [
+     100,
+     47.97
+    ],
+    [
+     200,
+     51.17
+    ],
+    [
+     300,
+     50.15
+    ],
+    [
+     400,
+     50.65
+    ],
+    [
+     500,
+     50.1
+    ],
+    [
+     600,
+     51.8
+    ],
+    [
+     700,
+     50.8
+    ],
+    [
+     800,
+     51.2
+    ],
+    [
+     900,
+     52.4
+    ],
+    [
+     1000,
+     52.3
+    ]
+   ]
+  },
+  "lfm_harbor_multi": {
+   "label": "LFM2.5-2.6B \u00b7 multi-harness",
+   "points": [
+    [
+     0,
+     42.18
+    ],
+    [
+     100,
+     47.06
+    ],
+    [
+     200,
+     52.63
+    ],
+    [
+     300,
+     50.7
+    ],
+    [
+     400,
+     51.0
+    ],
+    [
+     500,
+     52.1
+    ],
+    [
+     600,
+     50.7
+    ],
+    [
+     700,
+     54.6
+    ],
+    [
+     800,
+     54.0
+    ],
+    [
+     850,
+     54.5
+    ],
+    [
+     900,
+     52.0
+    ],
+    [
+     1000,
+     54.2
+    ]
+   ]
+  },
+  "qwen_harbor_opencode": {
+   "label": "Qwen3.5-2B \u00b7 OpenCode only",
+   "points": [
+    [
+     0,
+     14.6
+    ],
+    [
+     100,
+     24.5
+    ],
+    [
+     200,
+     27.1
+    ],
+    [
+     300,
+     28.5
+    ],
+    [
+     400,
+     32.8
+    ],
+    [
+     500,
+     33.0
+    ],
+    [
+     600,
+     33.0
+    ],
+    [
+     700,
+     39.5
+    ],
+    [
+     800,
+     33.1
+    ],
+    [
+     900,
+     29.6
+    ],
+    [
+     1000,
+     26.4
+    ]
+   ]
+  },
+  "qwen_harbor_multi": {
+   "label": "Qwen3.5-2B \u00b7 multi-harness",
+   "points": [
+    [
+     0,
+     14.6
+    ],
+    [
+     100,
+     24.8
+    ],
+    [
+     200,
+     26.3
+    ],
+    [
+     300,
+     28.6
+    ],
+    [
+     400,
+     33.3
+    ],
+    [
+     500,
+     37.0
+    ],
+    [
+     600,
+     31.8
+    ],
+    [
+     684,
+     32.1
+    ],
+    [
+     700,
+     28.8
+    ],
+    [
+     800,
+     27.0
+    ],
+    [
+     900,
+     22.7
+    ],
+    [
+     1000,
+     26.3
+    ]
+   ]
+  }
+ }
+}

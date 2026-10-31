@@ -1,8 +1,9 @@
 ---
-models: ["Qwen3-0.6B (LoRA shapes)", "Otter-9B plan (case study)"]
+models: ["Qwen3-0.6B (LoRA shapes)", "LFM2.5-2.6B across 4 harnesses (published data)", "Otter-9B plan (case study)"]
 ---
 import T from "../components/T.astro";
 import FigLora from "../components/figs/FigLora.astro";
+import FigHarness from "../components/figs/FigHarness.astro";
 
 ## From base model to assistant
 
@@ -73,6 +74,73 @@ For math, code and agent tasks you don't need human judges: a program can check 
 
 What makes RL hard in practice isn't the algorithm, it's the **environments**: tasks at the right difficulty (too easy or too hard gives no learning signal), verifiers that can't be gamed (reward hacking: deleting the failing tests counts as "all tests pass"), and sandboxes that are fast enough to run thousands of attempts.
 
+## Agentic RL in real harnesses
+
+Everything above trains on prompts and answers. A coding agent doesn't work like that: it runs inside a **<T k="harness">harness</T>** (OpenCode, Claude Code, Codex, Terminus-2, Mini-SWE-Agent...), the program that runs the loop, gives the model its tools, writes the context it reads, parses what it sends back and decides when to stop. **Agentic RL** is RL on whole multi-step tool-using sessions, and the obvious place to do it is inside the harnesses people actually use.
+
+This section follows one public study, [The ultimate guide to multi-harness RL](https://huggingface.co/spaces/FineEnvs/multi-harness-rl) (Hugging Face, updated 1 October 2026). All of the numbers below are theirs, copied from the article's data files. We didn't measure them.
+
+### The problem: scores come with a harness attached
+
+With the same weights, their base model (LFM2.5-2.6B) solved **62%** of the test tasks under Mini-SWE-Agent and **33%** under Claude Code. Another measurement quoted in the article put GLM-5.2 at 23% in one harness and 52% in another on SWE-bench Pro. A model that never trained in your harness calls tools it doesn't have or writes output it can't parse. Train it in one harness and it picks up that harness's habits. Module 14 makes the same point for evaluation: always name the harness next to the score.
+
+### White-box vs black-box environments
+
+An <T k="rl-environment">RL environment</T> owns the task, the state, the tools and the reward. The harness runs the loop. In a **white-box** setup the trainer drives: it samples an action, calls `env.step()`, reads the observation and samples again, so it already holds every token. This is what TRL's `GRPOTrainer` expects by default. A real harness is **black-box**: it drives the loop itself and only calls a model API. So the trainer has to get the tokens back some other way.
+
+### The stack: OpenEnv + Harbor + capture proxy + TRL
+
+- **<T k="openenv">OpenEnv</T>** ([GitHub](https://github.com/openenv/OpenEnv)): a standard interface for RL environments with Gymnasium-style `reset` / `step` / `state`, typed actions and observations, packaged as Docker and publishable to the Hub. It started as a Meta PyTorch + Hugging Face project and is BSD-3-licensed. It doesn't train anything or define rewards.
+- **[Harbor](https://harborframework.com/)** supplies the tasks and the sandboxes, with the harness picked per rollout. It's the same tool Otter's `baseline.sh` uses to run Terminal-Bench.
+- **The capture proxy** pretends to be a normal model provider. The harness gets a base URL and an API key, and the key is really a session id for that one rollout. The proxy accepts the four API dialects harnesses speak, converts them to chat completions for vLLM, and replies in the caller's own format.
+- **TRL** trains on what the proxy recorded, using async GRPO.
+
+### Why the exact tokens matter
+
+RL updates the probability of **the tokens the model actually sampled**. If you only keep the text and tokenize it again later, you can get different token ids than the ones that were generated (module 02), and the update then teaches the wrong thing. So for every call the proxy stores the prompt's token ids, the sampled token ids and a logprob for each sampled token:
+
+```bash
+vllm serve <model> --return-tokens-as-token-ids --logprobs-mode processed_logprobs
+```
+
+It also samples from the **full** distribution, with no `top_p` or `top_k` (module 03). Truncating the distribution makes the samples differ from what the policy itself would produce, and in RL that's a known route to entropy collapse. In their runs, moving `top_p` to 1.0 took the importance ratio (trainer probability ÷ sampler probability, ideally 1) from 0.985-0.993 to 0.9984-0.9999.
+
+Hosted APIs (OpenAI, Anthropic, HF Inference Providers) don't return these, so they can **evaluate** a harness but can't be **trained** through.
+
+Harnesses also retry, spawn subagents and compact their context, so a rollout is a tree of calls, not one clean chat. The proxy links each call to the earlier call that forms the longest exact token prefix of its prompt. Claude Code rewrites its history as it goes, so each of its rollouts turned into about eight training rows.
+
+### The setup
+
+- **Tasks:** 1,000 training tasks (data analysis built from Kaggle notebooks) and 250 held-out test tasks, each tested once under each of the 4 harnesses (1,000 cells).
+- **Runs:** OpenCode-only vs multi-harness, where each GRPO group of 8 rollouts uses one of the four harnesses.
+- **Async GRPO:** one H100 trains while a second serves the policy with vLLM and keeps generating rollouts. The catch is that rollouts come from weights usually 2 optimizer steps old, never more than 4.
+- **Hardware:** 2 H100s per run, plus one sandbox per rollout (1 CPU, 4 GB). Training took about 32 h (OpenCode only) and 46 h (multi-harness), not counting eval and restarts. They don't give a cost.
+
+### The reward: when the whole group is right
+
+GRPO learns from differences inside a group. If all 8 rollouts are correct, a correctness-only reward scores them all the same, and that group teaches nothing. In earlier Qwen runs with correctness alone, 35-58% of optimizer steps taught nothing, and tool calls per rollout crept from 13 to 41, because nothing told the model to stop exploring.
+
+For LFM they added a **tool-efficiency bonus of at most 0.1**, paid only on correct answers (a wrong answer still scores 0, so giving up early earns nothing). In 17.5% (OpenCode-only) and 22.6% (multi-harness) of groups, every rollout was correct and the bonus was the only signal. The multi-harness model made 31% fewer tool calls than the base model on tasks both solved. There was no LFM run without the bonus, so its exact effect isn't isolated.
+
+### Results
+
+<FigHarness />
+
+- **A model gets better where it trains.** OpenCode-only RL took OpenCode from 33.6% to 58% at the final step, while the three harnesses it never saw moved much less. Multi-harness RL improved every harness and finished at 54% overall, against 52% for OpenCode-only. The article calls that 2-point overall gap noise. The real difference is where the gains landed.
+- **Imitation did less than RL.** SFT on 3,189 successful sessions from a 27B teacher reached 47.5% (OpenCode data) and 43.1% (all harnesses), below both RL runs. Multi-harness SFT still cut tool calls by 24%, but its flat overall score hid gains of 4-9 points in three harnesses and a 17-point drop under Mini-SWE-Agent.
+- **Exact tokens aren't enough.** The Qwen3.5-2B runs (bottom chart) rose and then fell back. One run's answers grew past the output limit evaluation allowed, and the other kept calling tools without submitting. The LFM runs used the same output limit in training and eval plus a reward that values finishing, and didn't decline, though the model and task pool changed too.
+- **Steps are a poor unit.** Both LFM runs took 1,000 steps, but the multi-harness one saw 626 distinct tasks against 555 and 451M training tokens against 162M.
+
+Caveats they state: one small model, one task family, one attempt per cell, and the RL rows in the comparison are the best checkpoint picked on the test set.
+
+### What it means for Otter (our reading)
+
+- Otter's order (SFT on verified teacher sessions first, RL later) fits this. This study suggests the RL step is where most of the gain is.
+- Train and evaluate in the harnesses Otter will actually be used in, not just Terminus-2, and report each harness separately.
+- Add an efficiency bonus that only pays on correct answers, and keep training and eval output limits identical. That's especially relevant because the runs that collapsed were Qwen3.5-family, the same family as Ornith.
+- Budget: at their scale, 2 H100s for 32-46 h is about 64-92 H100-hours for a 2.6B model. A 9B model needs more. Measure on a short pilot before committing.
+- Their training scripts, with HF Jobs and Slurm instructions, are linked from the article's "Reproducing it" section. The SFT data is public as `FineEnvs/SmolDataEnvs-multiharness-sft`.
+
 ## Distillation
 
 A strong **teacher** model teaches a smaller **student**:
@@ -90,7 +158,7 @@ Otter is your project to post-train a 9B model for agentic coding. Its plan (fro
 | base model | Ornith-1.5-9B (Qwen3.5 architecture) | already strong at agent tasks; same tokenizer as a big teacher |
 | data | teacher agent trajectories, kept only if verified successful (rejection sampling), plus 20-30% general replay data | distillation via SFT; replay against forgetting |
 | method | BF16 LoRA, not QLoRA | Unsloth advises against 4-bit QLoRA for Qwen3.5-family models; ~22 GB for 9B |
-| later | on-policy distillation, then GRPO-family RL in verified environments | the published consensus recipe the plan summarizes: SFT → on-policy distillation → RL → merge |
+| later | on-policy distillation, then GRPO-family RL in verified environments (see [agentic RL in real harnesses](#agentic-rl-in-real-harnesses)) | the published consensus recipe the plan summarizes: SFT → on-policy distillation → RL → merge |
 | evaluation | Terminal-Bench 2.1 baseline before and after | measure the gain, not the vibe (module 14) |
 
 ## Tools
