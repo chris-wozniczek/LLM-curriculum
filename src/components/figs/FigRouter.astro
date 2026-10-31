@@ -8,9 +8,9 @@ const r = R as any;
   <div class="row"><div class="seg" id="ro-s"><button data-s="prose" class="on">2,048 tokens of Wikipedia</button><button data-s="code">2,048 tokens of Python</button></div></div>
   <svg id="ro-map" viewBox="0 0 660 190" style="width:100%;display:block;margin-top:14px"></svg>
   <div class="tk-h">One sentence, token by token · layer <b id="ro-lv"></b></div>
-  <input type="range" id="ro-l" min="0" max={r.layers - 1} value="7" style="width:100%" />
+  <div class="row"><div class="seg" id="ro-l">{Object.keys(r.sent.layers).map((l) => <button data-l={l} class={l === "7" ? "on" : ""}>layer {l}</button>)}</div></div>
   <div id="ro-tok"></div>
-  <Fragment slot="cap">Measured with <code>labs/moe_router.py</code> (BF16, CPU). Heatmap: rows are layers, columns are the 64 experts, brightness = how often the expert was picked. Below: the 8 experts picked for each token at one layer, biggest router weight first. Expert numbers are just slots; they have no built-in meaning.</Fragment>
+  <Fragment slot="cap">Measured with <code>labs/moe_router.py</code> (BF16, CPU). Heatmap: rows are layers, columns are the 64 experts, brightness = how often the expert was picked. Below: the 8 experts picked for each token at layer 0, 7 or 15 (the layers the lab stores per token), biggest router weight first. Expert numbers are just slots; they have no built-in meaning.</Fragment>
 </Fig>
 <style>
   .tk-h { margin: 16px 0 6px; font: 600 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
@@ -20,7 +20,7 @@ const r = R as any;
 <script>
   const D = JSON.parse(document.getElementById("ro-data")!.textContent!);
   let S = "prose";
-  const l = document.getElementById("ro-l") as HTMLInputElement;
+  const l = { value: "7" };
   function draw() {
     const C: number[][] = D.use[S].counts, mx = Math.max(...C.flat()), w = 600 / D.E, h = 170 / C.length;
     let s = "";
@@ -30,5 +30,6 @@ const r = R as any;
     document.getElementById("ro-tok")!.innerHTML = D.sent.tokens.map((t: string, i: number) => { const x = D.sent.layers[l.value][i]; return `<div><span>${JSON.stringify(t).slice(1, -1).replace(/</g, "&lt;")}</span><span>${x.e.map((e: number, j: number) => `<b style="opacity:${(0.45 + 0.55 * x.p[j] / x.p[0]).toFixed(2)}">${e}</b>`).join(" · ")}</span></div>`; }).join("");
   }
   document.querySelectorAll<HTMLButtonElement>("#ro-s button").forEach((b) => b.addEventListener("click", () => { document.querySelectorAll("#ro-s button").forEach((y) => y.classList.remove("on")); b.classList.add("on"); S = b.dataset.s!; draw(); }));
-  l.addEventListener("input", draw); draw();
+  document.querySelectorAll<HTMLButtonElement>("#ro-l button").forEach((b) => b.addEventListener("click", () => { document.querySelectorAll("#ro-l button").forEach((y) => y.classList.remove("on")); b.classList.add("on"); l.value = b.dataset.l!; draw(); }));
+  draw();
 </script>

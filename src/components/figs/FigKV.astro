@@ -6,8 +6,8 @@ const ms = Object.values(files).map((f: any) => {
   const L = c.num_hidden_layers, lt: string[] = c.layer_types ?? [];
   if (c.kv_lora_rank) return { name: d.repo.split("/")[1], per: L * (c.kv_lora_rank + c.qk_rope_head_dim), note: `MLA: ${L} layers × (${c.kv_lora_rank} latent + ${c.qk_rope_head_dim} RoPE)`, win: 0, slide: 0 };
   const hd = c.head_dim ?? c.hidden_size / c.num_attention_heads, kvh = c.num_key_value_heads ?? c.num_attention_heads;
-  const full = lt.length ? lt.filter((t) => t === "full_attention").length : L, slide = lt.filter((t) => t === "sliding_attention").length;
-  const lin = lt.filter((t) => t === "linear_attention").length;
+  const fi = c.full_attention_interval, full = lt.length ? lt.filter((t) => t === "full_attention").length : fi ? Math.floor(L / fi) : L, slide = lt.filter((t) => t === "sliding_attention").length;
+  const lin = lt.length ? lt.filter((t) => t === "linear_attention").length : fi ? L - Math.floor(L / fi) : 0;
   return { name: d.repo.split("/")[1], per: 2 * full * kvh * hd, sper: 2 * slide * kvh * hd, win: slide ? c.sliding_window : 0, slide,
     note: `${full} full-attention layers × 2 (K,V) × ${kvh} KV heads × ${hd}` + (slide ? ` + ${slide} sliding layers capped at ${c.sliding_window} tokens` : "") + (lin ? ` · ${lin} linear-attention layers keep a fixed-size state instead` : "") };
 }).sort((a, b) => a.per - b.per);

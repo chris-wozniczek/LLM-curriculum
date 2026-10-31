@@ -6,7 +6,7 @@ const keys = Object.keys((D as any).texts);
 const pick = models.findIndex((m) => m.name === "Qwen3-0.6B");
 ---
 <Fig title="Measured: the same text through 9 real tokenizers" sub="each chip is one token · hover a chip for its id">
-  <script type="application/json" id="tk-data" set:html={JSON.stringify(models.map((m) => ({ name: m.name, vocab: m.vocab, pieces: m.pieces, chat: m.chat })))} />
+  <script type="application/json" id="tk-data" set:html={JSON.stringify({ texts: (D as any).texts, models: models.map((m) => ({ name: m.name, vocab: m.vocab, pieces: m.pieces, chat: m.chat })) })} />
   <div class="row"><div class="seg" id="tk-m">{models.map((m, i) => <button data-i={i} class={i === pick ? "on" : ""}>{m.name}</button>)}</div></div>
   <div class="row" style="margin-top:10px"><div class="seg" id="tk-t">{keys.map((k, i) => <button data-k={k} class={i === 0 ? "on" : ""}>{k}</button>)}</div></div>
   <div id="tk-chips"></div>
@@ -31,14 +31,14 @@ const pick = models.findIndex((m) => m.name === "Qwen3-0.6B");
   #tk-chat { white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; font-size: 12.5px; }
 </style>
 <script>
-  const M = JSON.parse(document.getElementById("tk-data")!.textContent!);
+  const TD = JSON.parse(document.getElementById("tk-data")!.textContent!), M = TD.models;
   let mi = M.findIndex((m: any) => m.name === "Qwen3-0.6B"), tk = document.querySelector<HTMLButtonElement>("#tk-t button")!.dataset.k!;
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
   function draw() {
     const m = M[mi], ps = m.pieces[tk];
     document.getElementById("tk-chips")!.innerHTML = ps.map((p: any) => `<span title="id ${p.id}">${esc(p.s.replace(/\n/g, "⏎").replace(/ /g, "·"))}</span>`).join("");
     const st = (k: string, v: string) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`;
-    const chars = [...ps.map((p: any) => p.s).join("")].length;
+    const chars = [...TD.texts[tk]].length;
     document.getElementById("tk-out")!.innerHTML = st("tokens", String(ps.length)) + st("characters", String(chars)) + st("chars / token", (chars / ps.length).toFixed(2)) + st("vocab", m.vocab.toLocaleString("en-US"));
     document.getElementById("tk-chat")!.textContent = m.chat || "(no template)";
   }
