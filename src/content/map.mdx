@@ -1,0 +1,47 @@
+---
+models: ["no prior knowledge needed"]
+---
+import T from "../components/T.astro";
+
+## How this curriculum works
+
+This site teaches LLMs by opening real models and reading what is actually inside them. When a lesson says "Qwen3-0.6B has 28 layers", that number was read from the model's own `config.json`, not copied from a blog.
+
+Three kinds of numbers appear, and they are always marked:
+
+<div class="callout measured"><b>Measured</b><p>Produced by a script in this repo's <code>labs/</code> folder, on a real model. You can re-run it and get the same result.</p></div>
+<div class="callout source"><b>Source</b><p>Taken from a paper, official documentation, a model card or a config file, with a link.</p></div>
+<div class="callout plain"><b>Illustration</b><p>A made-up example to explain an idea (for instance, round numbers in a diagram). Never presented as a fact about a real model.</p></div>
+
+## Reading order
+
+You don't have to go 00 → 16. Two good routes:
+
+- **"I want to understand the ViC305-style posts"**: 05 (repo files) → 06 (number formats) → 07 (quantization, including top-1 and KL divergence) → 13 (recipes) → 08 (experts). These are the modules ready now.
+- **"I want the whole picture"**: 01 → 02 → 03 → 04, then 05 → 09, then 10 → 12, then 14 → 16.
+
+## Finding things
+
+- **Search** (press <code>/</code> or <code>Ctrl/⌘ K</code>) covers every lesson section and the glossary.
+- **Dotted words** like <T k="bpw">bpw</T> or <T k="kld">KL divergence</T> show a short definition on hover. Click to open the [glossary](/glossary).
+- **"Go deeper" boxes** hide the maths. Skip them on a first read.
+- **Progress**: tick "Mark module as done" at the bottom of a module. It's saved in your browser only.
+
+## What's covered
+
+Everything you asked about has a home:
+
+| Topic | Module |
+|---|---|
+| What the files in a model repo are, tensors, safetensors, GGUF, MLX | 05 |
+| FP32, FP16, BF16, FP8, MXFP4, NVFP4, mixed precision | 06 |
+| How quants are made, EXL2 vs EXL3, GPTQ/AWQ/imatrix, top-1, top-5, KL divergence | 07 |
+| Recipes on Hugging Face | 13 |
+| Experts, routers, 35B-A3B style models | 08 |
+| How Qwen, Ornith, DeepSeek, Kimi, gpt-oss differ | 09 |
+| KV cache and context | 04 |
+| Post-training in theory and practice, LoRA vs QLoRA, Otter | 11 |
+| Abliteration, merges, steering | 12 |
+| Building your own model from scratch | 10 |
+| Testing models on real tasks vs benchmarks | 14 |
+| oMLX, vLLM, llama.cpp, ExLlamaV3 | 15 |

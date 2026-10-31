@@ -1,0 +1,356 @@
+{
+ "repo": "ornith-ai/Ornith-1.5-9B",
+ "config": {
+  "architectures": [
+   "Qwen3_5ForConditionalGeneration"
+  ],
+  "dtype": "bfloat16",
+  "eos_token_id": 248046,
+  "hidden_size": 4096,
+  "image_token_id": 248056,
+  "model_type": "qwen3_5",
+  "pad_token_id": 248044,
+  "text_config": {
+   "attention_bias": false,
+   "attention_dropout": 0.0,
+   "attn_output_gate": true,
+   "bos_token_id": null,
+   "dtype": "bfloat16",
+   "eos_token_id": 248044,
+   "full_attention_interval": 4,
+   "head_dim": 256,
+   "hidden_act": "silu",
+   "hidden_size": 4096,
+   "initializer_range": 0.02,
+   "intermediate_size": 12288,
+   "layer_types": [
+    "linear_attention",
+    "linear_attention",
+    "linear_attention",
+    "full_attention",
+    "linear_attention",
+    "linear_attention",
+    "linear_attention",
+    "full_attention",
+    "linear_attention",
+    "linear_attention",
+    "linear_attention",
+    "full_attention",
+    "linear_attention",
+    "linear_attention",
+    "linear_attention",
+    "full_attention",
+    "linear_attention",
+    "linear_attention",
+    "linear_attention",
+    "full_attention",
+    "linear_attention",
+    "linear_attention",
+    "linear_attention",
+    "full_attention",
+    "linear_attention",
+    "linear_attention",
+    "linear_attention",
+    "full_attention",
+    "linear_attention",
+    "linear_attention",
+    "linear_attention",
+    "full_attention"
+   ],
+   "linear_conv_kernel_dim": 4,
+   "linear_key_head_dim": 128,
+   "linear_num_key_heads": 16,
+   "linear_num_value_heads": 32,
+   "linear_value_head_dim": 128,
+   "mamba_ssm_dtype": "float32",
+   "max_position_embeddings": 262144,
+   "mlp_only_layers": [],
+   "model_type": "qwen3_5_text",
+   "mtp_num_hidden_layers": 1,
+   "mtp_use_dedicated_embeddings": false,
+   "num_attention_heads": 16,
+   "num_hidden_layers": 32,
+   "num_key_value_heads": 4,
+   "pad_token_id": 248044,
+   "partial_rotary_factor": 0.25,
+   "rms_norm_eps": 1e-06,
+   "rope_parameters": {
+    "mrope_interleaved": true,
+    "mrope_section": [
+     11,
+     11,
+     10
+    ],
+    "partial_rotary_factor": 0.25,
+    "rope_theta": 10000000,
+    "rope_type": "default"
+   },
+   "tie_word_embeddings": false,
+   "use_cache": false,
+   "vocab_size": 248320
+  },
+  "tie_word_embeddings": false,
+  "transformers_version": "5.12.1",
+  "video_token_id": 248057,
+  "vision_config": {
+   "deepstack_visual_indexes": [],
+   "depth": 27,
+   "dtype": "bfloat16",
+   "hidden_act": "gelu_pytorch_tanh",
+   "hidden_size": 1152,
+   "in_channels": 3,
+   "initializer_range": 0.02,
+   "intermediate_size": 4304,
+   "model_type": "qwen3_5_vision",
+   "num_heads": 16,
+   "num_position_embeddings": 2304,
+   "out_hidden_size": 4096,
+   "patch_size": 16,
+   "spatial_merge_size": 2,
+   "temporal_patch_size": 2
+  },
+  "vision_end_token_id": 248054,
+  "vision_start_token_id": 248053
+ },
+ "total_size": 19306208736,
+ "tensor_count": 775,
+ "tensor_patterns": [
+  [
+   "lm_head.weight",
+   1
+  ],
+  [
+   "model.language_model.embed_tokens.weight",
+   1
+  ],
+  [
+   "model.language_model.layers.{n}.input_layernorm.weight",
+   32
+  ],
+  [
+   "model.language_model.layers.{n}.linear_attn.A_log",
+   24
+  ],
+  [
+   "model.language_model.layers.{n}.linear_attn.conv1d.weight",
+   24
+  ],
+  [
+   "model.language_model.layers.{n}.linear_attn.dt_bias",
+   24
+  ],
+  [
+   "model.language_model.layers.{n}.linear_attn.in_proj_a.weight",
+   24
+  ],
+  [
+   "model.language_model.layers.{n}.linear_attn.in_proj_b.weight",
+   24
+  ],
+  [
+   "model.language_model.layers.{n}.linear_attn.in_proj_qkv.weight",
+   24
+  ],
+  [
+   "model.language_model.layers.{n}.linear_attn.in_proj_z.weight",
+   24
+  ],
+  [
+   "model.language_model.layers.{n}.linear_attn.norm.weight",
+   24
+  ],
+  [
+   "model.language_model.layers.{n}.linear_attn.out_proj.weight",
+   24
+  ],
+  [
+   "model.language_model.layers.{n}.mlp.down_proj.weight",
+   32
+  ],
+  [
+   "model.language_model.layers.{n}.mlp.gate_proj.weight",
+   32
+  ],
+  [
+   "model.language_model.layers.{n}.mlp.up_proj.weight",
+   32
+  ],
+  [
+   "model.language_model.layers.{n}.post_attention_layernorm.weight",
+   32
+  ],
+  [
+   "model.language_model.layers.{n}.self_attn.k_norm.weight",
+   8
+  ],
+  [
+   "model.language_model.layers.{n}.self_attn.k_proj.weight",
+   8
+  ],
+  [
+   "model.language_model.layers.{n}.self_attn.o_proj.weight",
+   8
+  ],
+  [
+   "model.language_model.layers.{n}.self_attn.q_norm.weight",
+   8
+  ],
+  [
+   "model.language_model.layers.{n}.self_attn.q_proj.weight",
+   8
+  ],
+  [
+   "model.language_model.layers.{n}.self_attn.v_proj.weight",
+   8
+  ],
+  [
+   "model.language_model.norm.weight",
+   1
+  ],
+  [
+   "model.visual.blocks.{n}.attn.proj.bias",
+   27
+  ],
+  [
+   "model.visual.blocks.{n}.attn.proj.weight",
+   27
+  ],
+  [
+   "model.visual.blocks.{n}.attn.qkv.bias",
+   27
+  ],
+  [
+   "model.visual.blocks.{n}.attn.qkv.weight",
+   27
+  ],
+  [
+   "model.visual.blocks.{n}.mlp.linear_fc1.bias",
+   27
+  ],
+  [
+   "model.visual.blocks.{n}.mlp.linear_fc1.weight",
+   27
+  ],
+  [
+   "model.visual.blocks.{n}.mlp.linear_fc2.bias",
+   27
+  ],
+  [
+   "model.visual.blocks.{n}.mlp.linear_fc2.weight",
+   27
+  ],
+  [
+   "model.visual.blocks.{n}.norm1.bias",
+   27
+  ],
+  [
+   "model.visual.blocks.{n}.norm1.weight",
+   27
+  ],
+  [
+   "model.visual.blocks.{n}.norm2.bias",
+   27
+  ],
+  [
+   "model.visual.blocks.{n}.norm2.weight",
+   27
+  ],
+  [
+   "model.visual.merger.linear_fc1.bias",
+   1
+  ],
+  [
+   "model.visual.merger.linear_fc1.weight",
+   1
+  ],
+  [
+   "model.visual.merger.linear_fc2.bias",
+   1
+  ],
+  [
+   "model.visual.merger.linear_fc2.weight",
+   1
+  ],
+  [
+   "model.visual.merger.norm.bias",
+   1
+  ],
+  [
+   "model.visual.merger.norm.weight",
+   1
+  ],
+  [
+   "model.visual.patch_embed.proj.bias",
+   1
+  ],
+  [
+   "model.visual.patch_embed.proj.weight",
+   1
+  ],
+  [
+   "model.visual.pos_embed.weight",
+   1
+  ],
+  [
+   "mtp.fc.weight",
+   1
+  ],
+  [
+   "mtp.layers.{n}.input_layernorm.weight",
+   1
+  ],
+  [
+   "mtp.layers.{n}.mlp.down_proj.weight",
+   1
+  ],
+  [
+   "mtp.layers.{n}.mlp.gate_proj.weight",
+   1
+  ],
+  [
+   "mtp.layers.{n}.mlp.up_proj.weight",
+   1
+  ],
+  [
+   "mtp.layers.{n}.post_attention_layernorm.weight",
+   1
+  ],
+  [
+   "mtp.layers.{n}.self_attn.k_norm.weight",
+   1
+  ],
+  [
+   "mtp.layers.{n}.self_attn.k_proj.weight",
+   1
+  ],
+  [
+   "mtp.layers.{n}.self_attn.o_proj.weight",
+   1
+  ],
+  [
+   "mtp.layers.{n}.self_attn.q_norm.weight",
+   1
+  ],
+  [
+   "mtp.layers.{n}.self_attn.q_proj.weight",
+   1
+  ],
+  [
+   "mtp.layers.{n}.self_attn.v_proj.weight",
+   1
+  ],
+  [
+   "mtp.norm.weight",
+   1
+  ],
+  [
+   "mtp.pre_fc_norm_embedding.weight",
+   1
+  ],
+  [
+   "mtp.pre_fc_norm_hidden.weight",
+   1
+  ]
+ ],
+ "tensor_patterns_total": 59
+}

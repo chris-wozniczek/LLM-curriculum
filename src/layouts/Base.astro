@@ -1,0 +1,46 @@
+---
+import "../styles/global.css";
+import { glossary } from "../data/glossary";
+interface Props { title?: string; description?: string; accent?: string; noindex?: boolean }
+const { title, description = "How LLMs are built, stored, quantized and post-trained, taught by taking real open models apart.", accent, noindex } = Astro.props;
+const full = title ? `${title} · LLM Curriculum` : "LLM Curriculum";
+const path = Astro.url.pathname;
+const tips = Object.fromEntries(glossary.map((g) => [g.k, [g.t, g.d]]));
+---
+<!doctype html>
+<html lang="en" style={accent ? `--accent:${accent}` : undefined}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{full}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#06070a" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div class="progress" id="progress"></div>
+    <header class="topbar">
+      <a class="brand" href="/"><span class="brand-led"></span><b>llm/curriculum</b></a>
+      <nav class="top-links">
+        <a href="/" class="hide-sm" aria-current={path === "/" ? "page" : undefined}>Modules</a>
+        <a href="/glossary" class="hide-sm" aria-current={path.startsWith("/glossary") ? "page" : undefined}>Glossary</a>
+        <a href="/sources" class="hide-sm" aria-current={path.startsWith("/sources") ? "page" : undefined}>Sources</a>
+        <button class="search-btn" id="search-open" aria-label="Search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search</span><kbd>/</kbd></button>
+      </nav>
+    </header>
+    <div class="search-dlg" id="search-dlg" role="dialog" aria-modal="true" aria-label="Search">
+      <div class="search-panel">
+        <input id="search-in" type="text" placeholder="Search: KV cache, NVFP4, abliteration, Qwen..." autocomplete="off" spellcheck="false" />
+        <div class="search-results" id="search-out"><div class="search-empty">Type to search every lesson and the glossary.</div></div>
+      </div>
+    </div>
+    <main data-pagefind-body={noindex ? undefined : ""}><slot /></main>
+    <footer class="footer"><div class="wrap">Built from papers, official docs and the models' own files. Numbers marked <b style="color:var(--gold)">measured</b> were produced by the scripts in <code>labs/</code>. Corrections welcome.</div></footer>
+    <div class="tip" id="tip" role="tooltip"></div>
+    <script is:inline define:vars={{ tips }}>window.__tips = tips;</script>
+    <script>import "../scripts/site.ts";</script>
+  </body>
+</html>

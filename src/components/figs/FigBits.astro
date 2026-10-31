@@ -1,0 +1,82 @@
+---
+import Fig from "../Fig.astro";
+---
+<Fig title="Bit layout explorer" sub="type any number, pick a format">
+  <div class="bits-ui">
+    <div class="row">
+      <div class="seg" id="bf-fmt">
+        <button data-f="fp32">FP32</button><button data-f="fp16">FP16</button><button data-f="bf16" class="on">BF16</button>
+        <button data-f="e4m3">FP8 E4M3</button><button data-f="e5m2">FP8 E5M2</button><button data-f="e2m1">FP4 E2M1</button>
+      </div>
+      <label class="field">value <input type="text" id="bf-val" value="0.0236" inputmode="decimal" /></label>
+      <div class="seg" id="bf-pre"><button data-v="0.0236">a typical weight</button><button data-v="3.14159265">π</button><button data-v="1000">1000</button><button data-v="70000">70,000</button><button data-v="0.00001">0.00001</button></div>
+    </div>
+    <div class="bits" id="bf-bits"></div>
+    <div class="legend"><span><i style="background:var(--pink)"></i>sign</span><span><i style="background:var(--amber)"></i>exponent: how big</span><span><i style="background:var(--blue)"></i>mantissa: how precise</span></div>
+    <div class="stats" id="bf-stats"></div>
+  </div>
+  <Fragment slot="cap">Encoding follows IEEE 754 for FP32/FP16, bfloat16 for BF16, the OCP FP8 spec for E4M3 (max 448, no infinity) and E5M2, and the OCP MX spec for FP4 E2M1 (max 6). Rounding is round-to-nearest. Values above the max saturate to the max, which is what quantizers do in practice.</Fragment>
+</Fig>
+<style>
+  .bits { display: flex; flex-wrap: wrap; gap: 3px; margin: 20px 0 10px; }
+  .bits :global(span) { width: 26px; height: 36px; display: grid; place-items: center; border-radius: 6px; font: 600 14px/1 var(--mono); color: #0b0d12; }
+  .bits :global(span.gap) { width: 8px; background: none; }
+  .legend { display: flex; gap: 16px; font: 500 11px/1 var(--mono); color: var(--ink-3); flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; }
+</style>
+<script>
+  type F = { e: number; m: number; bias: number; max: number; ieee: boolean };
+  const FMT: Record<string, F> = {
+    fp32: { e: 8, m: 23, bias: 127, max: 3.4028234663852886e38, ieee: true },
+    fp16: { e: 5, m: 10, bias: 15, max: 65504, ieee: true },
+    bf16: { e: 8, m: 7, bias: 127, max: 3.3895313892515355e38, ieee: true },
+    e4m3: { e: 4, m: 3, bias: 7, max: 448, ieee: false },
+    e5m2: { e: 5, m: 2, bias: 15, max: 57344, ieee: true },
+    e2m1: { e: 2, m: 1, bias: 1, max: 6, ieee: false },
+  };
+  const rne = (x: number) => { const r = Math.round(x); return Math.abs(x % 1) === 0.5 && r % 2 ? r - 1 : r; };
+  function enc(x: number, f: F) {
+    const sign = x < 0 || Object.is(x, -0) ? 1 : 0;
+    let a = Math.min(Math.abs(x), f.max);
+    const minE = 1 - f.bias;
+    let e = a === 0 ? minE : Math.max(minE, Math.floor(Math.log2(a)));
+    const step = 2 ** (e - f.m);
+    let q = rne(a / step) * step;
+    q = Math.min(q, f.max);
+    let ef = 0, mf = 0;
+    if (q !== 0) {
+      e = Math.max(minE, Math.floor(Math.log2(q)));
+      if (q < 2 ** minE) { ef = 0; mf = Math.round(q / 2 ** (minE - f.m)); }
+      else { ef = e + f.bias; mf = Math.round((q / 2 ** e - 1) * 2 ** f.m); }
+    }
+    const steps = q === 0 ? 2 ** (minE - f.m) : 2 ** (Math.max(minE, Math.floor(Math.log2(q))) - f.m);
+    return { sign, ef, mf, q: sign ? -q : q, step: steps, sat: Math.abs(x) > f.max, minNormal: 2 ** minE, minSub: 2 ** (minE - f.m) };
+  }
+  const fmtN = (v: number) => (v === 0 ? "0" : Math.abs(v) >= 1e5 || Math.abs(v) < 1e-4 ? v.toExponential(6) : String(+v.toPrecision(9)));
+  let cur = "bf16";
+  const $ = (s: string) => document.querySelector(s)!;
+  function draw() {
+    const f = FMT[cur], x = parseFloat(($("#bf-val") as HTMLInputElement).value.replace(",", "."));
+    if (!isFinite(x)) return;
+    const r = enc(x, f);
+    const bits = [`<span style="background:var(--pink)">${r.sign}</span>`, `<span class="gap"></span>`];
+    for (let i = f.e - 1; i >= 0; i--) bits.push(`<span style="background:var(--amber)">${(r.ef >> i) & 1}</span>`);
+    bits.push(`<span class="gap"></span>`);
+    for (let i = f.m - 1; i >= 0; i--) bits.push(`<span style="background:var(--blue)">${Math.floor(r.mf / 2 ** i) & 1}</span>`);
+    $("#bf-bits").innerHTML = bits.join("");
+    const err = x === 0 ? 0 : Math.abs((r.q - x) / x) * 100;
+    const st = (k: string, v: string, c = "") => `<div class="stat"><small>${k}</small><b style="${c}">${v}</b></div>`;
+    $("#bf-stats").innerHTML =
+      st("bits", String(1 + f.e + f.m)) + st("stored value", fmtN(r.q)) +
+      st("rounding error", err < 1e-7 ? "0%" : err.toPrecision(3) + "%", err > 5 ? "color:var(--hot)" : "") +
+      st("next step here", fmtN(r.step)) + st("largest", fmtN(f.max)) + st("smallest > 0", fmtN(r.minSub)) +
+      (r.sat ? st("note", "saturated", "color:var(--hot)") : "");
+  }
+  document.querySelectorAll<HTMLButtonElement>("#bf-fmt button").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("#bf-fmt button").forEach((x) => x.classList.remove("on")); b.classList.add("on"); cur = b.dataset.f!; draw();
+  }));
+  document.querySelectorAll<HTMLButtonElement>("#bf-pre button").forEach((b) => b.addEventListener("click", () => { ($("#bf-val") as HTMLInputElement).value = b.dataset.v!; draw(); }));
+  $("#bf-val").addEventListener("input", draw);
+  draw();
+</script>

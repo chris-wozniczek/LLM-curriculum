@@ -1,0 +1,70 @@
+---
+import Base from "../layouts/Base.astro";
+const groups: [string, [string, string, string][]][] = [
+  ["Number formats", [
+    ["Mixed Precision Training (Micikevicius et al., 2017)", "https://arxiv.org/abs/1710.03740", "FP16 training with FP32 master weights and loss scaling."],
+    ["FP8 Formats for Deep Learning (Micikevicius et al., 2022)", "https://arxiv.org/abs/2209.05433", "E4M3 and E5M2."],
+    ["OCP Microscaling (MX) Formats Specification v1.0", "https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf", "MXFP4, MXFP8, E8M0 shared scales."],
+    ["Microscaling Data Formats for Deep Learning (Rouhani et al., 2023)", "https://arxiv.org/abs/2310.10537", "The research behind MX."],
+    ["NVIDIA: Introducing NVFP4", "https://developer.nvidia.com/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/", "16-value blocks, FP8 block scale, FP32 tensor scale."],
+  ]],
+  ["Quantization", [
+    ["GPTQ (Frantar et al., 2022)", "https://arxiv.org/abs/2210.17323", "Second-order, error-compensating weight quantization."],
+    ["AWQ (Lin et al., 2023)", "https://arxiv.org/abs/2306.00978", "Activation-aware scaling of salient channels."],
+    ["LLM.int8() (Dettmers et al., 2022)", "https://arxiv.org/abs/2208.07339", "Outlier features in large models."],
+    ["QuIP# (Tseng et al., 2024)", "https://arxiv.org/abs/2402.04396", "Hadamard incoherence processing and lattice codebooks."],
+    ["QTIP (Tseng et al., 2024)", "https://arxiv.org/abs/2406.11235", "Trellis-coded quantization, the basis of EXL3."],
+    ["ExLlamaV3 (turboderp)", "https://github.com/turboderp-org/exllamav3", "EXL3 format, converter, inference."],
+    ["ExLlamaV2 (turboderp)", "https://github.com/turboderp-org/exllamav2", "EXL2 format with per-layer mixed bitrates."],
+    ["llama.cpp k-quants PR #1684", "https://github.com/ggml-org/llama.cpp/pull/1684", "Q2_K…Q6_K block layouts and _S/_M/_L mixes."],
+    ["llama.cpp imatrix tool", "https://github.com/ggml-org/llama.cpp/tree/master/tools/imatrix", "Importance matrix from calibration text."],
+    ["llama.cpp perplexity / KL divergence", "https://github.com/ggml-org/llama.cpp/tree/master/tools/perplexity", "--kl-divergence-base and --kl-divergence."],
+    ["MLX quantization docs", "https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.quantize.html", "Affine group quantization with scales and biases."],
+    ["llm-compressor (vLLM project)", "https://github.com/vllm-project/llm-compressor", "Quant recipes: GPTQ, AWQ, FP8, NVFP4 for vLLM."],
+  ]],
+  ["File formats", [
+    ["safetensors", "https://github.com/huggingface/safetensors", "Header layout and safety model."],
+    ["GGUF spec", "https://github.com/ggml-org/ggml/blob/master/docs/gguf.md", "Single-file format for llama.cpp."],
+    ["Hugging Face chat templates", "https://huggingface.co/docs/transformers/main/en/chat_templating", "How chat_template turns messages into tokens."],
+  ]],
+  ["Models read in this curriculum", [
+    ["Qwen/Qwen3-0.6B", "https://huggingface.co/Qwen/Qwen3-0.6B", "Dense, GQA, tied embeddings."],
+    ["Qwen/Qwen3-30B-A3B", "https://huggingface.co/Qwen/Qwen3-30B-A3B", "MoE, 128 experts, 8 active."],
+    ["Qwen/Qwen3-Next-80B-A3B-Instruct", "https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Instruct", "Hybrid linear attention, 512 experts."],
+    ["Qwen/Qwen3.5-9B", "https://huggingface.co/Qwen/Qwen3.5-9B", "Hybrid Gated DeltaNet + full attention."],
+    ["ornith-ai/Ornith-1.5-9B", "https://huggingface.co/ornith-ai/Ornith-1.5-9B", "Qwen3.5-family, Otter's base model."],
+    ["deepseek-ai/DeepSeek-V3", "https://huggingface.co/deepseek-ai/DeepSeek-V3", "MLA, shared expert, FP8 block weights."],
+    ["DeepSeek-V3 Technical Report", "https://arxiv.org/abs/2412.19437", "Architecture and FP8 training."],
+    ["moonshotai/Kimi-K2-Instruct", "https://huggingface.co/moonshotai/Kimi-K2-Instruct", "DeepSeek-V3-style MoE at ~1T parameters."],
+    ["openai/gpt-oss-20b", "https://huggingface.co/openai/gpt-oss-20b", "MXFP4 experts, alternating sliding/full attention."],
+    ["Muse Spark Open 816B EXL3 SAGE 1.13bpw", "https://huggingface.co/vcruz305/Muse-Spark-Open-816B-A42B-EXL3-SAGE-1.13bpw", "Community EXL3 mixed-precision quant (ViC305)."],
+  ]],
+  ["Learning", [
+    ["3Blue1Brown: Neural networks", "https://www.3blue1brown.com/topics/neural-networks", "Visual intuition for transformers."],
+    ["Andrej Karpathy: Neural Networks: Zero to Hero", "https://karpathy.ai/zero-to-hero.html", "Build GPT from scratch."],
+    ["Sebastian Raschka: The Big LLM Architecture Comparison", "https://magazine.sebastianraschka.com/p/the-big-llm-architecture-comparison", "Qwen, DeepSeek, Kimi, gpt-oss side by side."],
+  ]],
+];
+---
+<Base title="Sources" description="Papers, specs, docs and model repos behind every claim.">
+  <section class="wrap" style="max-width:900px;padding-top:70px">
+    <span class="eyebrow">Sources</span>
+    <h1 class="display" style="font-size:clamp(44px,6vw,72px)">Where the facts <em>come from</em>.</h1>
+    <p class="lede">Papers, specs, official docs and the model repos themselves. Lessons link to the exact source next to each claim. This page collects them.</p>
+    {groups.map(([g, items]) => (
+      <div class="sg">
+        <h2>{g}</h2>
+        {items.map(([t, u, d]) => <a class="src" href={u} target="_blank" rel="noopener"><b>{t}</b><span>{d}</span><small>{new URL(u).host}</small></a>)}
+      </div>
+    ))}
+  </section>
+</Base>
+<style>
+  .sg { margin-top: 50px; }
+  .sg h2 { font: 400 30px/1.1 var(--serif); margin: 0 0 14px; }
+  .src { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; padding: 14px 16px; border-radius: 12px; text-decoration: none; border: 1px solid transparent; transition: background .2s, border-color .2s; }
+  .src:hover { background: var(--glass); border-color: var(--line); }
+  .src b { font-weight: 600; }
+  .src span { grid-column: 1; color: var(--ink-3); font-size: 14px; }
+  .src small { grid-row: 1; grid-column: 2; font: 500 11px/1.6 var(--mono); color: var(--ink-3); }
+</style>

@@ -1,0 +1,58 @@
+---
+import Base from "../layouts/Base.astro";
+import { modules, parts } from "../data/curriculum";
+---
+<Base>
+  <section class="wrap hero">
+    <span class="eyebrow rv">A curriculum built from real open models</span>
+    <h1 class="display rv">How LLMs are <em>built</em>, stored, squeezed and changed.</h1>
+    <p class="lede rv">From "what is a tensor" to EXL3, NVFP4, KV cache, MoE routing, LoRA and abliteration. Every module opens a real model from Hugging Face (Qwen, Ornith, DeepSeek, Kimi, gpt-oss) and reads its own files, and every number is either measured by the scripts in this repo or linked to its source.</p>
+    <div class="hero-row rv">
+      <a class="cta" href="/learn/model-files">Start with module 05: a model repo, file by file →</a>
+      <span class="pill"><i></i><span id="done-count">0</span> / {modules.length} done</span>
+    </div>
+  </section>
+  {parts.map((p, pi) => (
+    <section class="wrap part rv">
+      <div class="part-head"><span class="mono dim">{String(pi + 1).padStart(2, "0")}</span><h2>{p.title}</h2><p>{p.blurb}</p></div>
+      <div class="grid">
+        {modules.filter((m) => m.part === p.id).map((m) => (
+          <a class={`card ${m.status}`} href={`/learn/${m.slug}`} style={`--c:${m.c}`}>
+            <div class="card-top">
+              <span class="mono num">{String(m.n).padStart(2, "0")}</span>
+              {m.status === "ready" ? <span class="pill"><i></i>ready</span> : <span class="pill dim" style="--c:var(--ink-4)"><i></i>outline</span>}
+              <span class="tick" data-done={m.slug}>✓</span>
+            </div>
+            <h3>{m.title}</h3>
+            <p class="q">{m.q}</p>
+            <ul>{m.topics.slice(0, 5).map((t) => <li>{t}</li>)}{m.topics.length > 5 && <li class="dim">+{m.topics.length - 5} more</li>}</ul>
+          </a>
+        ))}
+      </div>
+    </section>
+  ))}
+</Base>
+<style>
+  .hero { padding-top: 90px; padding-bottom: 40px; }
+  .hero-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 30px; }
+  .cta { display: inline-block; padding: 14px 20px; border-radius: 14px; background: var(--ink); color: var(--bg); text-decoration: none; font-weight: 600; font-size: 15px; transition: transform .25s var(--ease), box-shadow .25s; }
+  .cta:hover { transform: translateY(-2px); box-shadow: 0 12px 30px color-mix(in srgb, var(--accent) 30%, transparent); }
+  .part { margin-top: 70px; }
+  .part-head { display: grid; grid-template-columns: 40px 1fr; align-items: baseline; column-gap: 12px; margin-bottom: 18px; }
+  .part-head h2 { font: 400 34px/1.1 var(--serif); margin: 0; }
+  .part-head p { grid-column: 2; margin: 6px 0 0; color: var(--ink-3); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .card { position: relative; display: block; padding: 20px; border-radius: var(--r); border: 1px solid var(--line); background: linear-gradient(180deg, rgba(20,23,31,.7), rgba(10,12,16,.7)); text-decoration: none; transition: border-color .25s, transform .25s var(--ease), background .25s; overflow: hidden; }
+  .card::before { content: ""; position: absolute; inset: 0 0 auto; height: 2px; background: var(--c); opacity: .5; }
+  .card:hover { border-color: var(--line-2); transform: translateY(-3px); }
+  .card.planned { opacity: .72; }
+  .card.planned:hover { opacity: 1; }
+  .card-top { display: flex; align-items: center; gap: 10px; }
+  .num { color: var(--c); font-size: 13px; font-weight: 600; }
+  .tick { margin-left: auto; width: 20px; height: 20px; border-radius: 6px; border: 1px solid var(--line-2); display: grid; place-items: center; font-size: 11px; color: transparent; }
+  .tick.on { background: var(--led); border-color: var(--led); color: #052; }
+  .card h3 { margin: 14px 0 6px; font-size: 20px; font-weight: 600; }
+  .card .q { margin: 0 0 12px; color: var(--ink-2); font-size: 14.5px; line-height: 1.5; }
+  .card ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+  .card li { font: 500 11px/1 var(--mono); padding: 5px 8px; border-radius: 8px; background: rgba(255,255,255,.04); color: var(--ink-3); }
+</style>

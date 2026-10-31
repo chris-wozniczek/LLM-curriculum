@@ -1,0 +1,137 @@
+---
+models: ["Qwen/Qwen3-0.6B", "Qwen3-30B-A3B", "DeepSeek-V3", "Kimi-K2", "gpt-oss-20b", "Ornith-1.5-9B", "Muse Spark EXL3"]
+---
+import T from "../components/T.astro";
+import FigTensors from "../components/figs/FigTensors.astro";
+import FigModels from "../components/figs/FigModels.astro";
+
+## What you actually download
+
+Open [Qwen/Qwen3-0.6B](https://huggingface.co/Qwen/Qwen3-0.6B/tree/main) and click "Files". This is the full list, with real sizes:
+
+| file | size | what it is |
+|---|---|---|
+| `model.safetensors` | 1,503,300,328 B | the weights: 311 tensors |
+| `config.json` | 726 B | the blueprint: how to build the empty model |
+| `generation_config.json` | 239 B | default sampling settings |
+| `tokenizer.json` | 11.4 MB | the full tokenizer: vocab, merge rules, special tokens |
+| `vocab.json` + `merges.txt` | 2.8 MB + 1.7 MB | the same BPE tokenizer in the older two-file form |
+| `tokenizer_config.json` | 9.7 KB | tokenizer settings, special tokens, and the **chat template** |
+| `README.md` | 14 KB | the model card |
+| `LICENSE` | 11 KB | Apache 2.0 |
+
+<div class="callout plain"><b>Plain language</b><p>The weights are the brain, <code>config.json</code> is the floor plan that says how many rooms and how big, and the tokenizer is the dictionary that turns your text into numbers. Code (Transformers, vLLM, llama.cpp, MLX) reads the floor plan, builds an empty model of exactly that shape, then pours the weights in.</p></div>
+
+## config.json, line by line
+
+Here is Qwen3-0.6B's real `config.json`, trimmed to the lines that matter:
+
+```json
+{
+  "architectures": ["Qwen3ForCausalLM"],
+  "model_type": "qwen3",
+  "num_hidden_layers": 28,
+  "hidden_size": 1024,
+  "intermediate_size": 3072,
+  "num_attention_heads": 16,
+  "num_key_value_heads": 8,
+  "head_dim": 128,
+  "vocab_size": 151936,
+  "max_position_embeddings": 40960,
+  "rope_theta": 1000000,
+  "rms_norm_eps": 1e-06,
+  "hidden_act": "silu",
+  "tie_word_embeddings": true,
+  "torch_dtype": "bfloat16"
+}
+```
+
+- **`architectures` / `model_type`**: which code to use. `Qwen3ForCausalLM` is a class in the Transformers library. "Causal LM" = predicts the next token from the ones before.
+- **`num_hidden_layers: 28`**: the transformer block is stacked 28 times. Each block = attention + MLP.
+- **`hidden_size: 1024`**: every token is represented by 1024 numbers as it moves through the model (<T k="hidden-size">hidden size</T>).
+- **`intermediate_size: 3072`**: the MLP inside each block widens to 3072 numbers and back down to 1024.
+- **`num_attention_heads: 16`, `head_dim: 128`**: attention runs 16 parallel "heads", each looking at 128 numbers. 16 × 128 = 2048, which is why `q_proj` below is 2048 × 1024.
+- **`num_key_value_heads: 8`**: only 8 key/value heads, each shared by 2 query heads. That's <T k="gqa">GQA</T> and halves the <T k="kv-cache">KV cache</T> (module 04).
+- **`vocab_size: 151936`**: the tokenizer knows 151,936 tokens (<T k="vocab">vocabulary</T>).
+- **`max_position_embeddings: 40960`**: the longest <T k="context">context</T> the model was set up for.
+- **`rope_theta`**: a setting of RoPE, the way positions are encoded (module 03).
+- **`tie_word_embeddings: true`**: the input <T k="embedding">embedding</T> table and the output <T k="lm-head">lm_head</T> are the same matrix (<T k="tied">tied</T>).
+- **`torch_dtype: bfloat16`**: weights are stored in <T k="bf16">BF16</T> (module 06).
+
+`generation_config.json` holds the defaults the authors recommend: for Qwen3-0.6B, `temperature: 0.6`, `top_p: 0.95`, `top_k: 20`. Servers like vLLM read it if you don't override them.
+
+## safetensors: a header and a blob
+
+A <T k="safetensors">.safetensors</T> file is deliberately simple ([spec](https://github.com/huggingface/safetensors)):
+
+1. **8 bytes**: a number N saying how long the header is.
+2. **N bytes of JSON**: for every tensor, its name, dtype, shape and byte range.
+3. **The raw numbers**, back to back.
+
+So you can list every tensor in a 1.5 GB file by reading just the first ~35 KB, without loading anything. That's all `labs/inspect_safetensors.py` does:
+
+```python
+with open(path, "rb") as f:
+    n = struct.unpack("<Q", f.read(8))[0]   # header length
+    header = json.loads(f.read(n))           # {name: {dtype, shape, data_offsets}}
+```
+
+For Qwen3-0.6B the header is 35,552 bytes and lists 311 <T k="tensor">tensors</T>. Here they all are:
+
+<FigTensors />
+
+### Reading the names
+
+Each name is a path into the model:
+
+- `model.embed_tokens.weight` [151936, 1024]: one row of 1024 numbers per token in the vocabulary.
+- `model.layers.0.self_attn.q_proj.weight` [2048, 1024]: layer 0, attention, the matrix that makes **queries**. `k_proj` and `v_proj` [1024, 1024] make keys and values (8 KV heads × 128 = 1024). `o_proj` [1024, 2048] mixes the heads back together.
+- `self_attn.q_norm` / `k_norm` [128]: small normalization vectors applied to each head's queries and keys (a Qwen3 detail).
+- `mlp.gate_proj`, `mlp.up_proj` [3072, 1024] and `mlp.down_proj` [1024, 3072]: the SwiGLU MLP. Gate and up widen to 3072, down shrinks back.
+- `input_layernorm`, `post_attention_layernorm` [1024]: RMSNorm scales before attention and before the MLP.
+- `model.norm.weight` [1024]: the final norm, then `lm_head.weight` [151936, 1024] turns 1024 numbers into one score per token.
+
+### Counting the parameters yourself
+
+Add the shapes up for one layer: q 2,097,152 + k 1,048,576 + v 1,048,576 + o 2,097,152 + MLP 3 × 3,145,728 + norms 2,304 = **15,730,944**. Times 28 layers = 440,466,432. Plus the embedding table (155,582,464) and the final norm (1,024) = **596,049,920**. That's the "0.6B", and Qwen's model card lists "Non-Embedding: 0.44B", which matches the 440M we got for the layers.
+
+The file holds 751,632,384 numbers, though, because it also stores `lm_head.weight` as a separate copy. 751.6M × 2 bytes (BF16) = 1.503 GB, exactly the file size above.
+
+## Shards and the index
+
+Big models are split into several files ("<T k="shard">shards</T>"): `model-00001-of-00016.safetensors` etc. A `model.safetensors.index.json` maps every tensor name to its shard:
+
+```json
+{ "metadata": { "total_size": 61064245248 },
+  "weight_map": { "model.layers.0.mlp.experts.0.down_proj.weight": "model-00001-of-00016.safetensors", ... } }
+```
+
+Qwen3-30B-A3B has 18,867 tensors in 16 shards. 18,432 of those are expert weights: 48 layers × 128 experts × 3 matrices. You can see the <T k="moe">MoE</T> structure (module 08) just from the names.
+
+<div class="callout warn"><b>Gotcha</b><p><code>total_size</code> is written by whoever made the repo and isn't always right. DeepSeek-V3's index says 1,369 GB, but its 163 shards add up to 688.6 GB (Hugging Face API). The index looks like it was computed at 2 bytes per weight, while the weights are stored in FP8 (1 byte).</p></div>
+
+## Nine models, side by side
+
+The same two files (config + index) are enough to tell how different models are built. Click a column to see that model's tensor patterns. Things to look for:
+
+- **Ornith-1.5-9B** and **Qwen3.5-9B** have identical shapes: Ornith is built on the Qwen3.5 architecture (same class, same tensor list). Both mix 24 linear-attention layers with 8 full-attention layers.
+- **DeepSeek-V3** and **Kimi K2** share the same layout (61 layers, 7168 wide, <T k="mla">MLA</T>, 1 shared expert), but Kimi has 384 experts instead of 256.
+- **gpt-oss-20b** stores its experts in <T k="mxfp4">MXFP4</T>, alternates sliding-window and full attention, and has 64 query heads with only 8 KV heads.
+- **Muse Spark EXL3**: tensor names end in `trellis`, `suh`, `svh`, `mul1`, the parts of an <T k="exl3">EXL3</T> quantized layer (module 07).
+
+<FigModels />
+
+## Other repo flavours
+
+- **<T k="gguf">GGUF</T>** repos (for llama.cpp, Ollama, LM Studio) put metadata, tokenizer and quantized tensors in one `.gguf` file per quant level: `Q4_K_M.gguf`, `Q8_0.gguf`… ([spec](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md)). Tensor names change too: `blk.0.attn_q.weight` instead of `model.layers.0.self_attn.q_proj.weight`.
+- **<T k="mlx">MLX</T>** repos (mlx-community/…) keep safetensors but each quantized linear layer becomes three tensors: `weight` (packed integers), `scales` and `biases`, one scale/bias per group of weights. `config.json` gets a `"quantization": {"group_size": 64, "bits": 4}` block.
+- **EXL3 / EXL2** repos (ExLlama) are safetensors with format-specific tensors plus a `quantization_config` in `config.json`.
+- **AWQ / GPTQ / compressed-tensors** repos (for vLLM) store packed integer weights plus scales, and `quantization_config` says how.
+
+## The chat template
+
+`tokenizer_config.json` contains a `chat_template` (4,168 characters for Qwen3-0.6B), a small Jinja program that turns a list of messages into the exact text the model was trained on, with special tokens such as `<|im_start|>` and `<|im_end|>` ([docs](https://huggingface.co/docs/transformers/main/en/chat_templating)). Newer repos often ship it as a separate `chat_template.jinja`. A wrong template is one of the most common reasons a model "suddenly got dumb" in a new tool: tool calls, thinking tags and stop tokens all depend on it.
+
+## The model card
+
+`README.md` is the model card: intended use, benchmark numbers, recommended sampling settings, license, and often the training recipe. Benchmark numbers on cards are the authors' own claims. Module 14 covers how to check them.

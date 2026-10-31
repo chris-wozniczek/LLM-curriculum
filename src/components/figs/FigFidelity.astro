@@ -1,0 +1,72 @@
+---
+import Fig from "../Fig.astro";
+import R from "../../data/quant-fidelity.json";
+const cfg = Object.entries((R as any).configs).map(([k, v]: any) => ({ k, ...v }));
+const pct = (x: number) => (x * 100).toFixed(2) + "%";
+const maxK = Math.max(...cfg.map((c) => c.kld_mean));
+---
+<Fig title="Measured: 12 ways to quantize Qwen3-0.6B" sub={`${R.tokens.toLocaleString("en-US")} tokens of ${R.dataset} · reference = original BF16 weights`}>
+  <script type="application/json" id="ff-data" set:html={JSON.stringify({ ref: R.ref_probe, cfg: cfg.map((c) => ({ k: c.k, label: c.label, probe: c.probe, hist: c.kld_hist, med: c.kld_median, p99: c.kld_p99, max: c.kld_max })) })} />
+  <div class="scroll-x">
+    <table class="tbl ff">
+      <thead><tr><th>method</th><th class="r">bpw</th><th class="r">top-1</th><th class="r">top-5</th><th>mean KLD</th><th class="r">median KLD</th><th class="r">PPL</th></tr></thead>
+      <tbody>
+        <tr><td>original BF16</td><td class="r">16</td><td class="r">100%</td><td class="r">100%</td><td>0</td><td class="r">0</td><td class="r">{R.ref_ppl.toFixed(2)}</td></tr>
+        {cfg.map((c, i) => (
+          <tr class={`click ${i === 6 ? "on" : ""}`} data-i={i}>
+            <td>{c.label}</td><td class="r">{c.bpw}</td><td class="r">{pct(c.top1)}</td><td class="r">{pct(c.top5)}</td>
+            <td><div class="kbar"><i style={`width:${Math.max(1.5, (Math.log10(c.kld_mean * 1e4 + 1) / Math.log10(maxK * 1e4 + 1)) * 100)}%`}></i><span>{c.kld_mean.toFixed(4)}</span></div></td>
+            <td class="r">{c.kld_median.toFixed(5)}</td><td class="r">{c.ppl.toFixed(2)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+  <div class="ff-detail">
+    <div>
+      <div class="ff-h">Same prompt, both models: top 5 next tokens</div>
+      <div id="ff-probe"></div>
+    </div>
+    <div>
+      <div class="ff-h">Where the KLD comes from: per-token KLD, log scale</div>
+      <svg id="ff-hist" viewBox="0 0 300 140" style="width:100%;height:160px"></svg>
+      <div class="stats" id="ff-tail"></div>
+    </div>
+  </div>
+  <Fragment slot="cap">Click a row. Produced by <code>labs/quant_fidelity.py</code> on CPU: weights of every attention and MLP linear layer are rounded to the format and turned back into floats ("fake quantization"), then both models read the same {R.seqs} × {R.seq_len}-token passages. Embeddings and lm_head stay BF16 unless the label says otherwise. No calibration data, so these are plain RTN-style results: GPTQ, AWQ, imatrix or EXL3 would score better at the same bpw. Small models are much more fragile than 30B+ ones, so treat the ranking as the lesson, not the exact numbers.</Fragment>
+</Fig>
+<style>
+  .ff tbody tr.click td { cursor: pointer; }
+  .kbar { position: relative; width: 150px; height: 18px; border-radius: 5px; background: rgba(255,255,255,.04); }
+  .kbar i { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: linear-gradient(90deg, var(--led), var(--amber), var(--hot)); background-size: 150px 100%; opacity: .55; }
+  .kbar span { position: relative; padding-left: 7px; line-height: 18px; }
+  .ff-detail { display: grid; grid-template-columns: 1.1fr 1fr; gap: 22px; margin-top: 20px; }
+  @media (max-width: 760px) { .ff-detail { grid-template-columns: 1fr; } }
+  .ff-h { font: 500 11px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+  #ff-probe :global(.pp) { margin-bottom: 14px; }
+  #ff-probe :global(.pp code) { font: 500 12.5px var(--mono); color: var(--ink); }
+  #ff-probe :global(.pc) { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+  #ff-probe :global(.pc > div) { font: 500 12px/1.5 var(--mono); padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.03); border: 1px solid var(--line); }
+  #ff-probe :global(.pc small) { display: block; color: var(--ink-3); font-size: 10px; letter-spacing: .08em; margin-bottom: 3px; }
+  #ff-probe :global(.tk) { display: flex; justify-content: space-between; gap: 8px; white-space: pre; }
+  #ff-probe :global(.tk.miss) { color: var(--hot); }
+</style>
+<script>
+  const D = JSON.parse(document.getElementById("ff-data")!.textContent!);
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "⏎");
+  const col = (t: [string, number][], other: [string, number][]) => t.map(([s, p], i) => `<div class="tk ${i === 0 && s !== other[0][0] ? "miss" : ""}"><span>${esc(JSON.stringify(s).slice(1, -1))}</span><span>${(p * 100).toFixed(1)}%</span></div>`).join("");
+  function show(i: number) {
+    document.querySelectorAll<HTMLElement>(".ff tr.click").forEach((r) => r.classList.toggle("on", +r.dataset.i! === i));
+    const c = D.cfg[i];
+    document.getElementById("ff-probe")!.innerHTML = D.ref.map((r: any, j: number) => `<div class="pp"><code>${esc(r.prompt)}</code><div class="pc"><div><small>ORIGINAL</small>${col(r.top5, c.probe[j].top5)}</div><div><small>${esc(c.k.toUpperCase())}</small>${col(c.probe[j].top5, r.top5)}</div></div></div>`).join("");
+    const h: number[] = c.hist, mx = Math.max(...h), bw = 300 / h.length;
+    let s = "";
+    h.forEach((v, j) => { const hh = (v / mx) * 112; s += `<rect x="${j * bw + 1}" y="${116 - hh}" width="${bw - 2}" height="${hh}" rx="2" fill="${j < 13 ? "var(--led)" : j < 18 ? "var(--amber)" : "var(--hot)"}" opacity=".8"/>`; });
+    [-8, -6, -4, -2, 0].forEach((e) => { const x = ((e + 8) / 9) * 300; s += `<text x="${x}" y="134" fill="rgba(238,241,245,.45)" font-size="9" font-family="monospace" text-anchor="middle">1e${e}</text>`; });
+    (document.getElementById("ff-hist") as unknown as SVGElement).innerHTML = s;
+    const st = (k: string, v: string) => `<div class="stat"><small>${k}</small><b style="font-size:15px">${v}</b></div>`;
+    document.getElementById("ff-tail")!.innerHTML = st("median", c.med.toFixed(5)) + st("99th pct", c.p99.toFixed(3)) + st("worst token", c.max.toFixed(2));
+  }
+  document.querySelectorAll<HTMLElement>(".ff tr.click").forEach((r) => r.addEventListener("click", () => show(+r.dataset.i!)));
+  show(Math.min(6, D.cfg.length - 1));
+</script>

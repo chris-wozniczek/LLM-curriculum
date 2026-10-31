@@ -1,0 +1,42 @@
+---
+import Fig from "../Fig.astro";
+const presets = [
+  ["Qwen3-0.6B", 0.6], ["Ornith-1.5-9B", 9.65], ["Qwen3-30B-A3B", 30.5], ["gpt-oss-120b", 117], ["Qwen3-Next-80B", 80], ["DeepSeek-V3", 671], ["Kimi K2", 1000], ["Muse Spark 816B", 816],
+];
+const bpw = [["BF16", 16], ["FP8 / Q8_0", 8.5], ["Q6_K", 6.56], ["Q4_K_M ≈", 4.85], ["MLX 4-bit g64", 4.5], ["NVFP4", 4.5], ["MXFP4", 4.25], ["EXL3 3.0", 3], ["EXL3 2.0", 2], ["1.13 bpw", 1.13]];
+---
+<Fig title="Will it fit?" sub="parameters × bits per weight ÷ 8">
+  <div class="row">
+    <div class="seg" id="sz-m">{presets.map(([n, p], i) => <button data-p={p} class={i === 2 ? "on" : ""}>{n}</button>)}</div>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <div class="seg" id="sz-b">{bpw.map(([n, b], i) => <button data-b={b} class={i === 4 ? "on" : ""}>{n}</button>)}</div>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <label class="field">params (B) <input type="number" id="sz-p" value="30.5" step="0.1" /></label>
+    <label class="field">bpw <input type="number" id="sz-bpw" value="4.5" step="0.05" /></label>
+  </div>
+  <div class="stats" id="sz-out"></div>
+  <div class="sz-bar"><div id="sz-fill"></div><span class="sz-mark" style="left:calc(48/64*100%)">~48 GB usable on a 64 GB Mac</span></div>
+  <Fragment slot="cap">Weights only. Add room for the KV cache (module 04), activations and the OS. The 48 GB mark is a rule of thumb: macOS lets the GPU wire roughly 75% of unified memory by default (it can be raised with <code>sysctl iogpu.wired_limit_mb</code>). Parameter counts are the model cards' rounded figures. Q4_K_M's real average depends on the model's tensor mix.</Fragment>
+</Fig>
+<style>
+  .sz-bar { position: relative; height: 12px; margin: 34px 0 22px; border-radius: 6px; background: rgba(255,255,255,.06); }
+  #sz-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--led), var(--accent)); transition: width .4s var(--ease); max-width: 100%; }
+  .sz-mark { position: absolute; top: -22px; transform: translateX(-50%); font: 500 10.5px/1 var(--mono); color: var(--ink-3); white-space: nowrap; }
+  .sz-mark::after { content: ""; position: absolute; left: 50%; top: 16px; width: 1px; height: 22px; background: var(--ink-3); }
+</style>
+<script>
+  const p = document.getElementById("sz-p") as HTMLInputElement, b = document.getElementById("sz-bpw") as HTMLInputElement;
+  const seg = (id: string, input: HTMLInputElement, key: string) => document.querySelectorAll<HTMLButtonElement>(`#${id} button`).forEach((x) => x.addEventListener("click", () => {
+    document.querySelectorAll(`#${id} button`).forEach((y) => y.classList.remove("on")); x.classList.add("on"); input.value = x.dataset[key]!; draw();
+  }));
+  function draw() {
+    const gb = (+p.value * 1e9 * +b.value) / 8 / 1e9;
+    const st = (k: string, v: string, c = "") => `<div class="stat"><small>${k}</small><b style="${c}">${v}</b></div>`;
+    const fit = gb <= 48 ? ["fits", "color:var(--led)"] : gb <= 64 ? ["very tight", "color:var(--amber)"] : ["no", "color:var(--hot)"];
+    document.getElementById("sz-out")!.innerHTML = st("weights", gb >= 100 ? gb.toFixed(0) + " GB" : gb.toFixed(1) + " GB") + st("GiB", (gb * 1e9 / 2 ** 30).toFixed(1)) + st("64 GB Mac", fit[0], fit[1]) + st("80 GB GPU", gb <= 72 ? "fits" : "no", gb <= 72 ? "color:var(--led)" : "color:var(--hot)");
+    (document.getElementById("sz-fill") as HTMLElement).style.width = Math.min(100, (gb / 64) * 100) + "%";
+  }
+  seg("sz-m", p, "p"); seg("sz-b", b, "b"); p.addEventListener("input", draw); b.addEventListener("input", draw); draw();
+</script>

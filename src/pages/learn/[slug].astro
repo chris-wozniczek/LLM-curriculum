@@ -1,0 +1,47 @@
+---
+import Base from "../../layouts/Base.astro";
+import { modules, bySlug } from "../../data/curriculum";
+
+const files = import.meta.glob<any>("../../content/*.mdx", { eager: true });
+export function getStaticPaths() { return modules.map((m) => ({ params: { slug: m.slug } })); }
+
+const { slug } = Astro.params as { slug: string };
+const m = bySlug[slug];
+const entry = files[`../../content/${slug}.mdx`];
+const headings = entry ? entry.getHeadings().filter((h: any) => h.depth <= 3) : [];
+const Content = entry?.default;
+const i = modules.indexOf(m);
+const prev = modules[i - 1], next = modules[i + 1];
+const pad = (n: number) => String(n).padStart(2, "0");
+---
+<Base title={`${pad(m.n)} ${m.title}`} description={m.q} accent={m.c}>
+  <div class="lesson">
+    <aside class="toc">
+      <div class="toc-mod">Module {pad(m.n)}</div>
+      {headings.length ? headings.map((h: any) => <a href={`#${h.slug}`} class={`d${h.depth}`}>{h.text}</a>) : m.topics.map((t) => <a>{t}</a>)}
+    </aside>
+    <article>
+      <header class="lesson-head">
+        <span class="eyebrow">Module {pad(m.n)} · {m.status === "ready" ? "ready" : "outline"}</span>
+        <h1>{m.title}</h1>
+        <p class="q">{m.q}</p>
+        {entry?.frontmatter?.models && <div class="meta-row">{entry.frontmatter.models.map((x: string) => <span class="pill"><i></i>{x}</span>)}</div>}
+      </header>
+      <div class="prose">
+        {Content ? <Content /> : (
+          <>
+            <div class="callout plain"><b>Coming in a later phase</b><p>This module is planned. Here is what it will cover, in order:</p></div>
+            <ol>{m.topics.map((t) => <li>{t}</li>)}</ol>
+          </>
+        )}
+      </div>
+      <div class="lesson-foot">
+        <button class="done-btn" data-done={m.slug}><i>✓</i>Mark module as done</button>
+        <nav class="pn">
+          {prev ? <a href={`/learn/${prev.slug}`}><small>← {pad(prev.n)}</small>{prev.title}</a> : <span></span>}
+          {next ? <a class="next" href={`/learn/${next.slug}`}><small>{pad(next.n)} →</small>{next.title}</a> : <span></span>}
+        </nav>
+      </div>
+    </article>
+  </div>
+</Base>

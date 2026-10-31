@@ -1,0 +1,64 @@
+---
+import Fig from "../Fig.astro";
+import sample from "../../data/qwen3-0.6b-weights-sample.json";
+const w = sample.row0_first128.slice(0, 64);
+---
+<Fig title="Quantize real weights" sub="64 weights from Qwen3-0.6B, layer 10, mlp.down_proj, row 0">
+  <script type="application/json" id="fq-data" set:html={JSON.stringify(w)} />
+  <div class="row">
+    <div class="seg" id="fq-fmt"><button data-f="int" class="on">INT symmetric</button><button data-f="asym">INT + zero point</button><button data-f="fp4">FP4 E2M1</button></div>
+    <div class="seg" id="fq-bits"><button data-b="8">8-bit</button><button data-b="4" class="on">4-bit</button><button data-b="3">3-bit</button><button data-b="2">2-bit</button></div>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <div class="seg" id="fq-g"><button data-g="64">1 scale for all 64</button><button data-g="32" class="on">groups of 32</button><button data-g="16">groups of 16</button></div>
+    <div class="seg" id="fq-o"><button data-o="0" class="on">real data</button><button data-o="1">inject an outlier</button></div>
+  </div>
+  <svg id="fq-svg" viewBox="0 0 640 220" preserveAspectRatio="none" style="width:100%;height:240px;margin-top:16px"></svg>
+  <div class="stats" id="fq-stats"></div>
+  <Fragment slot="cap">Grey bars: the real BF16 weights. Coloured dots: what survives after rounding (dequantized). Dashed lines: group boundaries, each group gets its own scale. FP4 uses only the 8 E2M1 magnitudes (0, 0.5, 1, 1.5, 2, 3, 4, 6) times the group's scale. The outlier button multiplies weight 5 by 12 to show how one big value wrecks its whole group. Weights read with <code>labs/inspect_safetensors.py</code>-style header parsing.</Fragment>
+</Fig>
+<script>
+  const W0: number[] = JSON.parse(document.getElementById("fq-data")!.textContent!);
+  const E2M1 = [0, 0.5, 1, 1.5, 2, 3, 4, 6];
+  let fmt = "int", bits = 4, g = 32, outl = 0;
+  const pick = (id: string, fn: (b: HTMLButtonElement) => void) => document.querySelectorAll<HTMLButtonElement>(`#${id} button`).forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(`#${id} button`).forEach((x) => x.classList.remove("on")); b.classList.add("on"); fn(b); draw();
+  }));
+  pick("fq-fmt", (b) => (fmt = b.dataset.f!)); pick("fq-bits", (b) => (bits = +b.dataset.b!)); pick("fq-g", (b) => (g = +b.dataset.g!)); pick("fq-o", (b) => (outl = +b.dataset.o!));
+  function quant(x: number[]) {
+    if (fmt === "fp4") {
+      const s = Math.max(...x.map(Math.abs)) / 6 || 1e-12;
+      return x.map((v) => { const a = Math.abs(v) / s; let best = 0; E2M1.forEach((e) => { if (Math.abs(e - a) < Math.abs(best - a)) best = e; }); return Math.sign(v) * best * s; });
+    }
+    if (fmt === "asym") {
+      const lo = Math.min(...x), hi = Math.max(...x), n = 2 ** bits - 1, s = (hi - lo) / n || 1e-12, z = Math.round(-lo / s);
+      return x.map((v) => (Math.min(n, Math.max(0, Math.round(v / s) + z)) - z) * s);
+    }
+    const qmax = 2 ** (bits - 1) - 1, s = Math.max(...x.map(Math.abs)) / qmax || 1e-12;
+    return x.map((v) => Math.min(qmax, Math.max(-qmax - 1, Math.round(v / s))) * s);
+  }
+  function draw() {
+    const W = W0.slice(); if (outl) W[5] = W[5] * 12;
+    const Q: number[] = [];
+    for (let i = 0; i < W.length; i += g) Q.push(...quant(W.slice(i, i + g)));
+    const m = Math.max(...W.map(Math.abs)) * 1.1, H = 220, mid = H / 2, bw = 640 / W.length, y = (v: number) => mid - (v / m) * (mid - 8);
+    let s = `<line x1="0" x2="640" y1="${mid}" y2="${mid}" stroke="rgba(255,255,255,.12)"/>`;
+    for (let i = g; i < W.length; i += g) s += `<line x1="${i * bw}" x2="${i * bw}" y1="0" y2="${H}" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 4"/>`;
+    W.forEach((v, i) => {
+      const x = i * bw;
+      s += `<rect x="${x + bw * 0.18}" width="${bw * 0.64}" y="${Math.min(y(v), mid)}" height="${Math.abs(y(v) - mid)}" rx="1.5" fill="rgba(238,241,245,.22)"/>`;
+      const err = Math.abs(Q[i] - v) / (m / 1.1);
+      const c = Q[i] === 0 && v !== 0 ? "var(--hot)" : err > 0.08 ? "var(--amber)" : "var(--accent)";
+      s += `<circle cx="${x + bw / 2}" cy="${y(Q[i])}" r="3.2" fill="${c}"/>`;
+    });
+    (document.getElementById("fq-svg") as unknown as SVGElement).innerHTML = s;
+    const rmse = Math.sqrt(W.reduce((a, v, i) => a + (v - Q[i]) ** 2, 0) / W.length);
+    const rms = Math.sqrt(W.reduce((a, v) => a + v * v, 0) / W.length);
+    const zeros = W.filter((v, i) => v !== 0 && Q[i] === 0).length;
+    const levels = fmt === "fp4" ? 15 : 2 ** bits;
+    const bb = fmt === "fp4" ? 4 : bits, bpw = bb + (16 + (fmt === "asym" ? 16 : 0)) / g;
+    const st = (k: string, v: string, c = "") => `<div class="stat"><small>${k}</small><b style="${c}">${v}</b></div>`;
+    document.getElementById("fq-stats")!.innerHTML = st("allowed values / group", String(levels)) + st("error (RMS, % of signal)", ((rmse / rms) * 100).toFixed(1) + "%", rmse / rms > 0.3 ? "color:var(--hot)" : "") + st("weights crushed to 0", String(zeros), zeros > 6 ? "color:var(--hot)" : "") + st("bpw incl. FP16 scales", bpw.toFixed(3));
+  }
+  draw();
+</script>
