@@ -6,3 +6,5 @@ __pycache__/
 ref_cache/
 *.pyc
 .DS_Store
+.vercel
+.env*
