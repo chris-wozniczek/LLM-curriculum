@@ -134,7 +134,7 @@ def main():
                 lp.append(None); continue
             out = torch.log_softmax(model(s[None]).logits[0].float(), -1)
             if label == "ref":
-                torch.save(out, f + ".tmp"); os.replace(f + ".tmp", f); lp.append(None)
+                tmp = f"{f}.{os.getpid()}.tmp"; torch.save(out, tmp); os.replace(tmp, f); lp.append(None)
             else:
                 lp.append(out)
         return lp
