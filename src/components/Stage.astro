@@ -1,0 +1,28 @@
+---
+interface Props { variant: string }
+const { variant } = Astro.props;
+const pal: Record<string, [string, string]> = {
+  home: ["#ffb46a", "#ff5a3c"],
+  basics: ["#76f5c3", "#6ad7ff"],
+  inside: ["#6ad7ff", "#b89cff"],
+  files: ["#ffb46a", "#ff5a3c"],
+  arch: ["#ff7aa8", "#b89cff"],
+  train: ["#b89cff", "#6ad7ff"],
+  use: ["#ffd66a", "#ffb46a"],
+};
+const [a, b] = pal[variant] ?? pal.home;
+---
+<canvas class="stage" data-variant={variant} data-a={a} data-b={b} aria-hidden="true"></canvas>
+<script>
+  const boot = (): void => {
+    const cs = document.querySelectorAll<HTMLCanvasElement>("canvas.stage");
+    if (!cs.length) return;
+    import("../scripts/scene").then(({ mountScene }) => {
+      cs.forEach((c) => {
+        const ok = mountScene(c, (c.dataset.variant ?? "home") as Parameters<typeof mountScene>[1], c.dataset.a ?? "#ffb46a", c.dataset.b ?? "#ff5a3c");
+        if (!ok) c.classList.add("fallback");
+      });
+    }).catch(() => cs.forEach((c) => c.classList.add("fallback")));
+  };
+  if (document.readyState === "complete") boot(); else addEventListener("load", boot, { once: true });
+</script>

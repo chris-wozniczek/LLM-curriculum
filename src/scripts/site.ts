@@ -12,6 +12,12 @@ onScroll();
 
 // reveal
 const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -8% 0px" });
+document.querySelectorAll<HTMLElement>(".grid").forEach((grid) => {
+  grid.querySelectorAll<HTMLElement>(".card").forEach((card, index) => {
+    card.classList.add("rv");
+    card.style.setProperty("--d", `${index * 55}ms`);
+  });
+});
 document.querySelectorAll(".rv").forEach((el) => io.observe(el));
 
 // glossary tooltips

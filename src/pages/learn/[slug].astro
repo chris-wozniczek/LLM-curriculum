@@ -1,6 +1,8 @@
 ---
 import Base from "../../layouts/Base.astro";
 import { modules, bySlug } from "../../data/curriculum";
+import Stage from "../../components/Stage.astro";
+import "../../styles/stage.css";
 
 const files = import.meta.glob<any>("../../content/*.mdx", { eager: true });
 export function getStaticPaths() { return modules.map((m) => ({ params: { slug: m.slug } })); }
@@ -15,18 +17,23 @@ const prev = modules[i - 1], next = modules[i + 1];
 const pad = (n: number) => String(n).padStart(2, "0");
 ---
 <Base title={`${pad(m.n)} ${m.title}`} description={m.q} accent={m.c}>
+  <section class="stage-hero lesson-hero">
+    <Stage variant={m.part} />
+    <div class="stage-copy wrap">
+  <header class="lesson-head">
+    <span class="eyebrow">Module {pad(m.n)} · {m.status === "ready" ? "ready" : "outline"}</span>
+    <h1>{m.title}</h1>
+    <p class="q">{m.q}</p>
+    {entry?.frontmatter?.models && <div class="meta-row">{entry.frontmatter.models.map((x: string) => <span class="pill"><i></i>{x}</span>)}</div>}
+  </header>
+    </div>
+  </section>
   <div class="lesson">
     <aside class="toc">
       <div class="toc-mod">Module {pad(m.n)}</div>
       {headings.length ? headings.map((h: any) => <a href={`#${h.slug}`} class={`d${h.depth}`}>{h.text}</a>) : m.topics.map((t) => <a>{t}</a>)}
     </aside>
     <article>
-      <header class="lesson-head">
-        <span class="eyebrow">Module {pad(m.n)} · {m.status === "ready" ? "ready" : "outline"}</span>
-        <h1>{m.title}</h1>
-        <p class="q">{m.q}</p>
-        {entry?.frontmatter?.models && <div class="meta-row">{entry.frontmatter.models.map((x: string) => <span class="pill"><i></i>{x}</span>)}</div>}
-      </header>
       <div class="prose">
         {Content ? <Content /> : (
           <>

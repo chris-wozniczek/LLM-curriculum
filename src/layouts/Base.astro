@@ -1,8 +1,8 @@
 ---
 import "../styles/global.css";
 import { glossary } from "../data/glossary";
-interface Props { title?: string; description?: string; accent?: string; noindex?: boolean }
-const { title, description = "How LLMs are built, stored, quantized and post-trained, taught by taking real open models apart.", accent, noindex } = Astro.props;
+interface Props { title?: string; description?: string; accent?: string; noindex?: boolean; intro?: boolean }
+const { title, description = "How LLMs are built, stored, quantized and post-trained, taught by taking real open models apart.", accent, noindex, intro } = Astro.props;
 const full = title ? `${title} · LLM Curriculum` : "LLM Curriculum";
 const path = Astro.url.pathname;
 const tips = Object.fromEntries(glossary.map((g) => [g.k, [g.t, g.d]]));
@@ -19,9 +19,32 @@ const tips = Object.fromEntries(glossary.map((g) => [g.k, [g.t, g.d]]));
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+    {intro && <script is:inline>
+      const root = document.documentElement;
+      let seen = false;
+      try { seen = sessionStorage.getItem("llmc-intro") === "1"; } catch {}
+      if (!seen && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        root.classList.add("intro");
+        try { sessionStorage.setItem("llmc-intro", "1"); } catch {}
+        window.__llmcIntroFallback = window.setTimeout(() => {
+          root.classList.remove("intro");
+          document.getElementById("curtain")?.remove();
+          window.dispatchEvent(new Event("llmc:ready"));
+        }, 4000);
+      }
+    </script>}
   </head>
   <body>
     <div class="progress" id="progress"></div>
+    {intro && <div class="curtain" id="curtain" aria-hidden="true">
+      <div class="curtain-inner">
+        <span class="brand"><span class="brand-led"></span><b>llm/curriculum</b></span>
+        <span class="curtain-count mono" id="curtain-count">000</span>
+        <div class="curtain-progress"><i></i></div>
+      </div>
+    </div>}
+    <div class="grain" aria-hidden="true"></div>
+    <div class="cursor" id="cursor" aria-hidden="true"></div>
     <header class="topbar">
       <a class="brand" href="/"><span class="brand-led"></span><b>llm/curriculum</b></a>
       <nav class="top-links">
@@ -42,5 +65,6 @@ const tips = Object.fromEntries(glossary.map((g) => [g.k, [g.t, g.d]]));
     <div class="tip" id="tip" role="tooltip"></div>
     <script is:inline define:vars={{ tips }}>window.__tips = tips;</script>
     <script>import "../scripts/site.ts";</script>
+    <script>import "../scripts/motion.ts";</script>
   </body>
 </html>

@@ -17,7 +17,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   <div class="tb-leg">{kinds.map((k) => <button data-k={k}><i style={`background:${colors[k]}`}></i>{k}<b>{(totals[k] / all * 100).toFixed(1)}%</b><small>{fmt(totals[k])}</small></button>)}</div>
   <div class="row" style="margin:14px 0 10px">
     <label class="field">filter <input type="text" id="tn-q" placeholder="e.g. layers.0. or q_proj" style="width:220px" /></label>
-    <span class="mono dim" id="tn-n" style="font-size:12px"></span>
+    <span class="mono dim" id="tn-n" data-num style="font-size:12px"></span>
   </div>
   <div class="scroll-x tn-box">
     <table class="tbl"><thead><tr><th>name</th><th>dtype</th><th>shape</th><th class="r">numbers</th></tr></thead>
