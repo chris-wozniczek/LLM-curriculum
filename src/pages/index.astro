@@ -1,15 +1,20 @@
 ---
 import Base from "../layouts/Base.astro";
 import { modules, parts } from "../data/curriculum";
+import Stage from "../components/Stage.astro";
+import "../styles/stage.css";
 ---
-<Base>
-  <section class="wrap hero">
+<Base intro>
+  <section class="stage-hero">
+    <Stage variant="home" />
+    <div class="wrap hero stage-copy">
     <span class="eyebrow rv">A curriculum built from real open models</span>
     <h1 class="display rv">How LLMs are <em>built</em>, stored, squeezed and changed.</h1>
     <p class="lede rv">From "what is a tensor" to EXL3, NVFP4, KV cache, MoE routing, LoRA and abliteration. Every module opens a real model from Hugging Face (Qwen, Ornith, DeepSeek, Kimi, gpt-oss) and reads its own files, and every number is either measured by the scripts in this repo or linked to its source.</p>
     <div class="hero-row rv">
       <a class="cta" href="/learn/model-files">Start with module 05: a model repo, file by file →</a>
       <span class="pill"><i></i><span id="done-count">0</span> / {modules.length} done</span>
+    </div>
     </div>
   </section>
   {parts.map((p, pi) => (
@@ -33,7 +38,7 @@ import { modules, parts } from "../data/curriculum";
   ))}
 </Base>
 <style>
-  .hero { padding-top: 90px; padding-bottom: 40px; }
+  .hero { padding-top: 90px; }
   .hero-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 30px; }
   .cta { display: inline-block; padding: 14px 20px; border-radius: 14px; background: var(--ink); color: var(--bg); text-decoration: none; font-weight: 600; font-size: 15px; transition: transform .25s var(--ease), box-shadow .25s; }
   .cta:hover { transform: translateY(-2px); box-shadow: 0 12px 30px color-mix(in srgb, var(--accent) 30%, transparent); }
