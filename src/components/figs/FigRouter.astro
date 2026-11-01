@@ -12,10 +12,10 @@ const r = R as any;
   <div id="ro-tok"></div>
   <Fragment slot="cap">Measured with <code>labs/moe_router.py</code> (BF16, CPU). Heatmap: rows are layers, columns are the 64 experts, brightness = how often the expert was picked. Below: the 8 experts picked for each token at layer 0, 7 or 15 (the layers the lab stores per token), biggest router weight first. Expert numbers are just slots; they have no built-in meaning.</Fragment>
 </Fig>
-<style>
-  .tk-h { margin: 16px 0 6px; font: 600 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+<style is:global>
+  #ro-map + .tk-h { margin: 16px 0 6px; font: 600 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
   #ro-tok { display: grid; gap: 3px; margin-top: 8px; font: 500 12px/1.3 var(--mono); }
-  #ro-tok div { display: grid; grid-template-columns: 90px 1fr; gap: 10px; } #ro-tok span:first-child { white-space: pre; text-align: right; color: var(--ink-2); }
+  #ro-tok > div { display: grid; grid-template-columns: 90px 1fr; gap: 10px; } #ro-tok > div > span:first-child { white-space: pre; text-align: right; color: var(--ink-2); }
 </style>
 <script>
   const D = JSON.parse(document.getElementById("ro-data")!.textContent!);

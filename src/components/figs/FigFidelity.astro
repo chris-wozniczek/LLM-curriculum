@@ -35,21 +35,21 @@ const maxK = Math.max(...cfg.map((c) => c.kld_mean));
   </div>
   <Fragment slot="cap">Click a row. Produced by <code>labs/quant_fidelity.py</code> on CPU: weights of every attention and MLP linear layer are rounded to the format and turned back into floats ("fake quantization"), then both models read the same {R.seqs} × {R.seq_len}-token passages. Embeddings and lm_head stay BF16 unless the label says otherwise. No calibration data, so these are plain RTN-style results: GPTQ, AWQ, imatrix or EXL3 would score better at the same bpw. Small models are much more fragile than 30B+ ones, so treat the ranking as the lesson, not the exact numbers.</Fragment>
 </Fig>
-<style>
+<style is:global>
   .ff tbody tr.click td { cursor: pointer; }
-  .kbar { position: relative; width: 150px; height: 18px; border-radius: 5px; background: rgba(255,255,255,.04); }
-  .kbar i { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: linear-gradient(90deg, var(--led), var(--amber), var(--hot)); background-size: 150px 100%; opacity: .55; }
-  .kbar span { position: relative; padding-left: 7px; line-height: 18px; }
+  .ff .kbar { position: relative; width: 150px; height: 18px; border-radius: 5px; background: rgba(255,255,255,.04); }
+  .ff .kbar i { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: linear-gradient(90deg, var(--led), var(--amber), var(--hot)); background-size: 150px 100%; opacity: .55; }
+  .ff .kbar span { position: relative; padding-left: 7px; line-height: 18px; }
   .ff-detail { display: grid; grid-template-columns: 1.1fr 1fr; gap: 22px; margin-top: 20px; }
   @media (max-width: 760px) { .ff-detail { grid-template-columns: 1fr; } }
   .ff-h { font: 500 11px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
-  #ff-probe :global(.pp) { margin-bottom: 14px; }
-  #ff-probe :global(.pp code) { font: 500 12.5px var(--mono); color: var(--ink); }
-  #ff-probe :global(.pc) { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
-  #ff-probe :global(.pc > div) { font: 500 12px/1.5 var(--mono); padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.03); border: 1px solid var(--line); }
-  #ff-probe :global(.pc small) { display: block; color: var(--ink-3); font-size: 10px; letter-spacing: .08em; margin-bottom: 3px; }
-  #ff-probe :global(.tk) { display: flex; justify-content: space-between; gap: 8px; white-space: pre; }
-  #ff-probe :global(.tk.miss) { color: var(--hot); }
+  #ff-probe .pp { margin-bottom: 14px; }
+  #ff-probe .pp code { font: 500 12.5px var(--mono); color: var(--ink); }
+  #ff-probe .pc { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+  #ff-probe .pc > div { font: 500 12px/1.5 var(--mono); padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.03); border: 1px solid var(--line); }
+  #ff-probe .pc small { display: block; color: var(--ink-3); font-size: 10px; letter-spacing: .08em; margin-bottom: 3px; }
+  #ff-probe .tk { display: flex; justify-content: space-between; gap: 8px; white-space: pre; }
+  #ff-probe .tk.miss { color: var(--hot); }
 </style>
 <script>
   const D = JSON.parse(document.getElementById("ff-data")!.textContent!);
