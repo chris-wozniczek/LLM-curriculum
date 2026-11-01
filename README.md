@@ -2,6 +2,8 @@
 
 An interactive curriculum on how LLMs are built, stored, quantized, post-trained and served, taught by reading real open models (Qwen, Ornith, DeepSeek, Kimi, gpt-oss) from their own files.
 
+Chat with this curriculum: [Ask DeepWiki](https://deepwiki.com/chris-wozniczek/LLM-curriculum)
+
 Static [Astro](https://astro.build) site, no backend. Search is [Pagefind](https://pagefind.app), built at build time.
 
 ```bash

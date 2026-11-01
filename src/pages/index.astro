@@ -13,6 +13,7 @@ import "../styles/stage.css";
     <p class="lede rv">From "what is a tensor" to EXL3, NVFP4, KV cache, MoE routing, LoRA and abliteration. Every module opens a real model from Hugging Face (Qwen, Ornith, DeepSeek, Kimi, gpt-oss) and reads its own files, and every number is either measured by the scripts in this repo or linked to its source.</p>
     <div class="hero-row rv">
       <a class="cta" href="/learn/foundations">Start with module 01: Foundations →</a>
+      <a class="cta cta-secondary" href="https://deepwiki.com/chris-wozniczek/LLM-curriculum" target="_blank" rel="noopener">Ask questions on DeepWiki ↗</a>
       <span class="pill"><i></i><span id="done-count">0</span> / {modules.length} done</span>
     </div>
     </div>
@@ -42,6 +43,9 @@ import "../styles/stage.css";
   .hero-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 30px; }
   .cta { display: inline-block; padding: 14px 20px; border-radius: 14px; background: var(--ink); color: var(--bg); text-decoration: none; font-weight: 600; font-size: 15px; transition: transform .25s var(--ease), box-shadow .25s; }
   .cta:hover { transform: translateY(-2px); box-shadow: 0 12px 30px color-mix(in srgb, var(--accent) 30%, transparent); }
+  .cta-secondary { border: 1px solid var(--line); background: transparent; color: var(--ink-2); }
+  .cta-secondary:hover { border-color: var(--accent); color: var(--accent); box-shadow: none; }
+  @media (max-width: 480px) { .hero-row .cta { max-width: 100%; box-sizing: border-box; white-space: normal; } }
   .part { margin-top: 70px; }
   .part-head { display: grid; grid-template-columns: 40px 1fr; align-items: baseline; column-gap: 12px; margin-bottom: 18px; }
   .part-head h2 { font: 400 34px/1.1 var(--serif); margin: 0; }
