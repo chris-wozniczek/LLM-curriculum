@@ -96,6 +96,11 @@ h1.display em { font-style: italic; color: var(--accent); }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line-2); font: 500 11px/1.4 var(--mono); color: var(--ink-2); letter-spacing: .04em; }
 .pill i { width: 6px; height: 6px; border-radius: 50%; background: var(--c, var(--led)); }
 .footer { border-top: 1px solid var(--line); margin-top: 120px; padding: 36px 0 60px; color: var(--ink-3); font-size: 13px; }
+.footer p { margin: 0; }
+.footer-credit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; margin-top: 18px !important; padding-top: 18px; border-top: 1px solid var(--line); font: 500 12px/1.4 var(--mono); letter-spacing: .03em; }
+.footer-credit b { color: var(--ink); font-weight: 600; }
+.footer-credit a { color: var(--ink-2); text-decoration: none; border-bottom: 1px solid transparent; transition: color .2s, border-color .2s; }
+.footer-credit a:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
 
 /* lesson page */
 .lesson { display: grid; grid-template-columns: 240px minmax(0, var(--col)); gap: 56px; justify-content: center; padding: 48px clamp(16px, 4vw, 40px) 0; }
