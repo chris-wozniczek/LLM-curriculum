@@ -47,7 +47,7 @@ if (links.length) {
     es.forEach((e) => {
       if (e.isIntersecting) { links.forEach((l) => l.classList.remove("on")); map.get(e.target.id)?.classList.add("on"); }
     });
-  }, { rootMargin: "-20% 0px -70% 0px" });
+  }, { rootMargin: "-8% 0px -84% 0px" });
   map.forEach((_, id) => { const h = document.getElementById(id); if (h) tio.observe(h); });
 }
 

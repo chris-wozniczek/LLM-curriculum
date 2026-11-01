@@ -84,43 +84,6 @@ if (!reduce) {
     }).observe(search, { attributes: true, attributeFilter: ["class"] });
   }
 
-  const fine = matchMedia("(hover: hover) and (pointer: fine)").matches;
-  const cursor = document.getElementById("cursor");
-  if (fine && cursor) {
-    let x = innerWidth / 2;
-    let y = innerHeight / 2;
-    let cx = x;
-    let cy = y;
-    let frame = 0;
-    const dot = document.createElement("i");
-    dot.className = "cursor-dot";
-    dot.setAttribute("aria-hidden", "true");
-    document.body.append(dot);
-    const move = (event: PointerEvent): void => {
-      x = event.clientX;
-      y = event.clientY;
-      dot.style.transform = `translate(${x}px, ${y}px)`;
-      if (!frame) frame = requestAnimationFrame(tick);
-    };
-    const tick = (): void => {
-      cx += (x - cx) * 0.16;
-      cy += (y - cy) * 0.16;
-      cursor.style.transform = `translate(${cx}px, ${cy}px)`;
-      if (Math.abs(x - cx) + Math.abs(y - cy) > 0.15) frame = requestAnimationFrame(tick);
-      else {
-        cx = x;
-        cy = y;
-        cursor.style.transform = `translate(${cx}px, ${cy}px)`;
-        frame = 0;
-      }
-    };
-    addEventListener("pointermove", move, { passive: true });
-    document.addEventListener("pointerover", (event) => {
-      const target = (event.target as HTMLElement).closest("a, button, [role='button'], input, label, summary");
-      cursor.classList.toggle("big", Boolean(target));
-    });
-  } else cursor?.remove();
-
   document.querySelectorAll<HTMLElement>(".card").forEach((card) => {
     card.addEventListener("pointermove", (event) => {
       const rect = card.getBoundingClientRect();
