@@ -15,14 +15,14 @@ const next = (R as any).next as any[];
   <div id="sp-bars"></div>
   <Fragment slot="cap">Logits measured with <code>labs/inside_qwen.py</code>. To keep the page light only the top 40 of 151,936 tokens are stored, so probabilities here are renormalized over those 40 (with temperature 1 they cover most of the mass for these prompts). Order applied: temperature, then top-k, top-p and min-p, then renormalize. Faded bars are tokens that can no longer be sampled.</Fragment>
 </Fig>
-<style>
+<style is:global>
   .sp-ctl { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 14px 0; }
   .sp-ctl .field { display: grid; gap: 6px; } .sp-ctl b { color: var(--accent); font-family: var(--mono); }
   #sp-bars { display: grid; gap: 3px; font: 500 12px/1 var(--mono); }
-  .sp-r { display: grid; grid-template-columns: 110px 1fr 56px; gap: 10px; align-items: center; transition: opacity .2s; }
-  .sp-r.off { opacity: .25; } .sp-r span:first-child { white-space: pre; overflow: hidden; text-overflow: ellipsis; text-align: right; color: var(--ink-2); }
-  .sp-b { height: 10px; border-radius: 5px; background: rgba(255,255,255,.05); } .sp-b i { display: block; height: 100%; border-radius: 5px; background: var(--accent); transition: width .25s var(--ease); }
-  .sp-r span:last-child { text-align: right; }
+  #sp-bars .sp-r { display: grid; grid-template-columns: 110px 1fr 56px; gap: 10px; align-items: center; transition: opacity .2s; }
+  #sp-bars .sp-r.off { opacity: .25; } #sp-bars .sp-r span:first-child { white-space: pre; overflow: hidden; text-overflow: ellipsis; text-align: right; color: var(--ink-2); }
+  #sp-bars .sp-b { height: 10px; border-radius: 5px; background: rgba(255,255,255,.05); } #sp-bars .sp-b i { display: block; height: 100%; border-radius: 5px; background: var(--accent); transition: width .25s var(--ease); }
+  #sp-bars .sp-r span:last-child { text-align: right; }
 </style>
 <script>
   const N = JSON.parse(document.getElementById("sp-data")!.textContent!);

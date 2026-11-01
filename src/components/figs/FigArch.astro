@@ -30,11 +30,11 @@ const keys = Object.keys(ms[0].rows);
   <div class="scroll-x"><table class="tbl" id="ar-t"><thead><tr><th></th><th id="ar-ha"></th><th id="ar-hb"></th></tr></thead><tbody>{keys.map((k) => <tr data-k={k}><td>{k}</td><td></td><td></td></tr>)}</tbody></table></div>
   <Fragment slot="cap">Every value is read at build time from the model's own <code>config.json</code> (Qwen3-Next's layer pattern comes from its <code>full_attention_interval</code>). Strip colours: attention type on top (green full, blue sliding window, violet linear), MLP type below (amber MoE, grey dense). Muse Spark is a community EXL3 pack; its config is shown as published.</Fragment>
 </Fig>
-<style>
+<style is:global>
   #ar-strip { display: grid; gap: 10px; margin: 16px 0; }
-  .ar-s small { font: 600 11px/1 var(--mono); color: var(--ink-3); } .ar-s div { display: flex; gap: 1px; margin-top: 5px; }
-  .ar-s i { flex: 1; height: 12px; border-radius: 2px; } .ar-s i.m { height: 7px; margin-top: 1px; }
-  .full { background: var(--accent); } .sw { background: var(--blue); } .lin { background: var(--violet); } .moe { background: var(--amber); } .dense { background: rgba(255,255,255,.18); }
+  #ar-strip .ar-s small { font: 600 11px/1 var(--mono); color: var(--ink-3); } #ar-strip .ar-s > div { display: flex; gap: 1px; margin-top: 5px; }
+  #ar-strip .ar-s i { flex: 1; height: 12px; border-radius: 2px; } #ar-strip .ar-s i.m { height: 7px; margin-top: 1px; }
+  #ar-strip .ar-s i.full { background: var(--accent); } #ar-strip .ar-s i.sw { background: var(--blue); } #ar-strip .ar-s i.lin { background: var(--violet); } #ar-strip .ar-s i.moe { background: var(--amber); } #ar-strip .ar-s i.dense { background: rgba(255,255,255,.18); }
   #ar-t td.diff { color: var(--amber); }
 </style>
 <script>
