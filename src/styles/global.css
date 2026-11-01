@@ -201,14 +201,20 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border: 0; bo
 /* reveal */
 .rv { opacity: 0; transform: translateY(14px); transition: opacity .8s var(--ease), transform .8s var(--ease); }
 .rv.in { opacity: 1; transform: none; }
-.card.rv { opacity: 0; transform: translateY(14px); transition: opacity .8s var(--ease) var(--d, 0s), transform .8s var(--ease) var(--d, 0s), border-color .25s, background .25s; }
-.card.rv:not(.in) { opacity: 0; transform: translateY(14px); }
-.card.rv.in:hover { transform: translateY(-3px); transition-delay: 0s; }
+.grid .card.rv { opacity: 0; transform: translateY(14px); transition: opacity .8s var(--ease) var(--d, 0s), transform .8s var(--ease) var(--d, 0s), border-color .25s, background .25s; }
+.grid .card.rv.in { opacity: 1; transform: none; }
+.grid .card.rv.in:hover { transform: translateY(-3px); transition-delay: 0s; }
+.grid .card.planned.rv.in { opacity: .72; }
+.grid .card.planned.rv.in:hover { opacity: 1; }
 .card::after { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity .25s;
   background: radial-gradient(circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--c, var(--accent)) 16%, transparent), transparent 46%); }
 .card:hover::after { opacity: 1; }
 .card > * { position: relative; z-index: 1; }
-@media (prefers-reduced-motion: reduce) { .rv { opacity: 1; transform: none; transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .rv { opacity: 1; transform: none; transition: none; }
+  .grid .card.rv, .grid .card.rv.in, .grid .card.rv.in:hover,
+  .grid .card.planned.rv.in, .grid .card.planned.rv.in:hover { opacity: 1; transform: none; transition: none; }
+}
 
 /* intro */
 .curtain { display: none; }
@@ -236,13 +242,6 @@ html.intro .curtain.lift { clip-path: inset(0 0 100%); }
 .pn a small { display: block; font: 500 11px/1 var(--mono); color: var(--ink-3); letter-spacing: .08em; margin-bottom: 6px; }
 .pn a.next { text-align: right; }
 
-/* pointer */
-.cursor { position: fixed; left: 0; top: 0; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; border: 1px solid rgba(255,255,255,.42); pointer-events: none; z-index: 95;
-  mix-blend-mode: difference; transition: width .35s var(--ease), height .35s var(--ease), margin .35s var(--ease), background .3s, border-color .3s; }
-.cursor.big { width: 76px; height: 76px; margin: -38px 0 0 -38px; background: #fff; border-color: #fff; }
-.cursor-dot { position: fixed; left: 0; top: 0; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: var(--accent); pointer-events: none; z-index: 96; box-shadow: 0 0 10px var(--accent); }
-@media (hover: none), (pointer: coarse) { .cursor, .cursor-dot { display: none; } }
-
 /* changing figure values */
 .fig [data-num], .fig .bump { position: relative; top: 0; text-shadow: 0 0 0 transparent; transition: top .18s var(--ease), text-shadow .25s var(--ease), color .25s var(--ease); }
 .fig [data-num].bump, .fig .bump { top: -2px; color: var(--accent); text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent); animation: figure-number-bump .32s var(--ease) both; }
@@ -252,7 +251,7 @@ html.intro .curtain.lift { clip-path: inset(0 0 100%); }
   .grain { animation: none; }
   .card::after, .fig::after { display: none; animation: none !important; transition: none; }
   .card.rv, .card.rv:not(.in), .card.rv.in:hover { opacity: 1; transform: none; transition: none; }
-  .curtain, .cursor, .cursor-dot { display: none !important; }
+  .curtain { display: none !important; }
   .topbar { transform: none !important; transition: none; }
   .fig [data-num], .fig [data-num].bump, .fig .bump { top: 0; text-shadow: none; transition: none; animation: none; }
   .split .w > span { opacity: 1; transform: none; transition: none; }
