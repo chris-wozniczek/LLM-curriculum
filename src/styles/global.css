@@ -50,16 +50,22 @@ html.intro:not(.ready) .topbar { transform: translateY(-140%); }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; white-space: nowrap; }
 .brand-led { width: 9px; height: 9px; border-radius: 50%; background: var(--led); box-shadow: 0 0 12px var(--led); animation: pulse 2.4s ease-in-out infinite; }
 .brand b { font: 600 14px/1 var(--mono); letter-spacing: -0.02em; }
+.brand-by { padding-left: 12px; border-left: 1px solid var(--line); color: var(--ink-3); font: 500 11.5px/1 var(--mono); text-decoration: none; white-space: nowrap; transition: color .2s; }
+.brand-by:hover { color: var(--ink); }
 @keyframes pulse { 50% { opacity: 0.45; box-shadow: 0 0 4px var(--led); } }
 .top-links { display: flex; gap: 4px; margin-left: auto; align-items: center; }
 .top-links a, .search-btn { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px; font: 500 11.5px/1 var(--mono); letter-spacing: 0.05em;
   text-decoration: none; color: var(--ink-3); border: 1px solid transparent; background: none; cursor: pointer; transition: color .2s, border-color .2s, background .2s; }
 .top-links a:hover, .top-links a[aria-current="page"] { color: var(--ink); border-color: var(--line-2); }
+.top-links a.deepwiki-link { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.top-links a.deepwiki-link:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 70%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .search-btn { border-color: var(--line-2); color: var(--ink-2); min-width: 190px; }
 .search-btn:hover { background: var(--glass-2); color: var(--ink); }
 .search-btn kbd { margin-left: auto; font: 500 10px/1 var(--mono); padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line-2); color: var(--ink-3); }
 .progress { position: fixed; top: 0; left: 0; height: 2px; width: 100%; transform-origin: 0 50%; transform: scaleX(0); background: linear-gradient(90deg, var(--accent), var(--violet)); z-index: 60; }
+@media (max-width: 900px) { .top-links a.hide-sm:not(.deepwiki-link) { display: none; } .search-btn { min-width: 0; } }
 @media (max-width: 760px) { .top-links a.hide-sm { display: none; } .search-btn { min-width: 0; } .search-btn span, .search-btn kbd { display: none; } }
+@media (max-width: 560px) { .brand-by { display: none; } }
 
 /* grain */
 .grain { position: fixed; inset: -50%; z-index: 40; pointer-events: none; opacity: .045; will-change: transform;
